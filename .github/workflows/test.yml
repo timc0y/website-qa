@@ -1,0 +1,40 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+      - name: Validate skill package
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path("skill/website-qa")
+          text = (root / "SKILL.md").read_text()
+          match = re.match(r"^---\n(.*?)\n---", text, re.S)
+          assert match, "SKILL.md needs YAML frontmatter"
+          frontmatter = match.group(1)
+          assert re.search(r"^name: website-qa$", frontmatter, re.M)
+          assert re.search(r"^description:", frontmatter, re.M)
+          keys = re.findall(r"^([a-z_]+):", frontmatter, re.M)
+          assert keys == ["name", "description"], f"Unexpected frontmatter keys: {keys}"
+          agent = (root / "agents/openai.yaml").read_text()
+          assert "$website-qa" in agent
+          PY

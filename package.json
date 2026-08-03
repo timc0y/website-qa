@@ -1,0 +1,19 @@
+{
+  "name": "website-qa-skill",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Evidence-led website QA skill and Playwright runner",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "check:disclosure": "node scripts/check-disclosure.mjs",
+    "test:regress": "node skill/website-qa/tests/check-regress.mjs",
+    "test:crosspage": "node skill/website-qa/tests/check-crosspage.mjs",
+    "test:cascade": "node skill/website-qa/tests/check-cascade.mjs",
+    "test:detectors": "node skill/website-qa/tests/check-fixtures.mjs",
+    "test": "npm run check:disclosure && npm run test:regress && npm run test:crosspage && npm run test:cascade && npm run test:detectors"
+  },
+  "dependencies": {
+    "playwright": "1.62.1"
+  }
+}
