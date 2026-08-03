@@ -7,24 +7,24 @@ const textExtensions = new Set([
   '.css', '.html', '.js', '.json', '.md', '.mjs', '.txt', '.yaml', '.yml',
 ]);
 
-const joined = (...parts) => parts.join('');
-const forbiddenText = [
-  joined('side', 'man'),
-  joined('spur', 'wing'),
-  joined('sutton', 's'),
-  joined('ae', 'thos'),
-  joined('get', 'real'),
-  joined('get', ' real'),
-  joined('greg', 'gs'),
-  joined('exec', '-life'),
-  joined('key', 'man'),
-  joined('head', 'teacher'),
-  joined('red', 'wood'),
-  joined('oak', '-platform'),
-  joined('site', 'check'),
-  joined('wf-qa', '-figma'),
-  joined('github.com/', 'timc0y', '/webflow'),
-].map((value) => value.toLowerCase());
+const restrictedIdentifiers = [
+  'c2lkZW1hbg==',
+  'c3B1cndpbmc=',
+  'c3V0dG9ucw==',
+  'YWV0aG9z',
+  'Z2V0cmVhbA==',
+  'Z2V0IHJlYWw=',
+  'Z2V0LXJlYWw=',
+  'Z3JlZ2dz',
+  'ZXhlYy1saWZl',
+  'a2V5bWFu',
+  'aGVhZHRlYWNoZXI=',
+  'cmVkd29vZA==',
+  'b2FrLXBsYXRmb3Jt',
+  'c2l0ZWNoZWNr',
+  'd2YtcWEtZmlnbWE=',
+  'Z2l0aHViLmNvbS90aW1jMHkvd2ViZmxvdw==',
+].map((value) => Buffer.from(value, 'base64').toString('utf8').toLowerCase());
 
 const absolutePathPatterns = [
   /\/Users\//i,
@@ -55,7 +55,7 @@ async function walk(directory) {
 
     const content = await readFile(file, 'utf8');
     const searchable = `${relative}\n${content}`.toLowerCase();
-    for (const token of forbiddenText) {
+    for (const token of restrictedIdentifiers) {
       if (searchable.includes(token)) failures.push(`${relative}: contains a restricted project identifier`);
     }
     for (const pattern of absolutePathPatterns) {
