@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skills.local/figma-parity/parity-manifest.schema.json",
+  "title": "Figma parity evidence manifest",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "provider", "generatedAt", "targetUrl", "source", "execution", "coverage", "evidence", "limitations"],
+  "properties": {
+    "schemaVersion": {
+      "enum": [1, 2, 3],
+      "description": "2 adds findings/designSourceDefects/docDrift, joint finding ownership, target fingerprints and the capture-contract fields on evidence.live. 3 adds coverage.coveredViaComponent (a missing breakpoint resolved against the project map's component registry instead of reported as a flat gap), plus top-level externalReferences and scheduledForDeletion. All additions are additive: an older reader can ignore them, so consumers such as Parallax keep working."
+    },
+    "provider": { "const": "figma-parity" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "targetUrl": { "type": "string", "format": "uri" },
+    "source": {
+      "type": "object",
+      "required": ["kind", "fileKey"],
+      "properties": {
+        "kind": { "const": "figma" },
+        "fileKey": { "type": "string", "minLength": 1 },
+        "fileUrl": { "type": "string", "format": "uri" }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": ["mode", "capabilities"],
+      "properties": {
+        "mode": { "enum": ["local-parity", "interactive-parity", "forge-live-evidence"] },
+        "captureProviders": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Every distinct captureProvider appearing in evidence. More than one entry means images must not be pixel-diffed against each other."
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": { "type": "boolean" },
+          "properties": {
+            "figmaNodeData": { "type": "boolean" },
+            "figmaRenders": { "type": "boolean" },
+            "liveScreenshots": { "type": "boolean" },
+            "responsive": { "type": "boolean" },
+            "numericMeasurements": { "type": "boolean" },
+            "visualComparison": { "type": "boolean" },
+            "pixelDiff": { "type": "boolean" },
+            "interactiveStates": { "type": "boolean" },
+            "interactionTransitions": { "type": "boolean" },
+            "designSourceDefects": { "type": "boolean" },
+            "crossBrowser": { "type": "boolean" },
+            "regression": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "required": ["requested", "compared", "missing"],
+      "properties": {
+        "requested": { "type": "array", "items": { "$ref": "#/$defs/cell" } },
+        "compared": { "type": "array", "items": { "$ref": "#/$defs/cell" } },
+        "missing": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/cell" },
+              { "type": "object", "required": ["reason"], "properties": { "reason": { "type": "string", "minLength": 1 } } }
+            ]
+          }
+        },
+        "coveredViaComponent": {
+          "type": "array",
+          "description": "schemaVersion 3+. A cell not itself captured, resolved instead against another route's instance of the same component in the project map's components registry. build_manifest.mjs only emits an entry here when the registry actually backs the claim; an unbacked claim is downgraded into `missing` instead. See references/project-map.md.",
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/cell" },
+              {
+                "type": "object",
+                "required": ["coveredVia", "componentId"],
+                "properties": {
+                  "coveredVia": { "type": "string", "minLength": 1, "description": "the route whose component instance backs this cell" },
+                  "componentId": { "type": "string", "minLength": 1, "description": "the components registry key, e.g. 'Hero/AboutHero'" }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "route", "breakpoint", "state", "figma", "live", "comparison", "inspected", "confidence"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "route": { "type": "string", "minLength": 1 },
+          "breakpoint": { "type": "integer", "minimum": 1 },
+          "state": { "type": "string", "minLength": 1 },
+          "figma": {
+            "type": "object",
+            "required": ["nodeId", "path"],
+            "properties": {
+              "nodeId": { "type": "string", "minLength": 1 },
+              "path": { "type": "string", "minLength": 1 }
+            }
+          },
+          "live": {
+            "type": "object",
+            "required": ["captureProvider"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "captureProvider": { "type": "string", "minLength": 1 },
+              "artifactId": { "type": "string", "minLength": 1 },
+              "sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
+              "viewport": { "$ref": "#/$defs/viewport" },
+              "observedContentWidth": {
+                "type": ["integer", "null"],
+                "description": "Laid-out content width, which is NOT the window width when a scrollbar gutter is reserved. null means the provider could not report it, in which case horizontal findings from this capture cannot be `verified`."
+              },
+              "settleMethod": { "type": ["string", "null"] },
+              "scriptsExecuted": {
+                "type": ["boolean", "null"],
+                "description": "Whether the page's own scripts ran. null means unknown; findings about script-driven behaviour are then unsafe."
+              }
+            },
+            "anyOf": [{ "required": ["path"] }, { "required": ["artifactId", "sha256"] }]
+          },
+          "comparison": {
+            "type": "object",
+            "required": ["sideBySidePath"],
+            "properties": {
+              "sideBySidePath": { "type": "string", "minLength": 1 },
+              "diffPath": { "type": "string", "minLength": 1 },
+              "metricsPath": { "type": "string", "minLength": 1 }
+            }
+          },
+          "inspected": { "type": "boolean" },
+          "confidence": { "enum": ["verified", "visual-only", "suspected"] },
+          "limitations": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "description": "Fingerprints of the served document at run start and end. stable:false means the target changed mid-run and evidence must not be blended across the change.",
+      "properties": {
+        "stable": { "type": ["boolean", "null"] },
+        "start": { "type": "object" },
+        "end": { "type": "object" }
+      }
+    },
+    "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+    "designSourceDefects": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+    "docDrift": {
+      "type": "array",
+      "description": "Places where a project Figma map or build doc contradicts measured reality.",
+      "items": {
+        "type": "object",
+        "required": ["claim", "measured"],
+        "properties": {
+          "source": { "type": "string" },
+          "claim": { "type": "string", "minLength": 1 },
+          "measured": { "type": "string", "minLength": 1 },
+          "action": { "type": "string" }
+        }
+      }
+    },
+    "artifacts": { "type": "object", "additionalProperties": { "type": "string" } },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "externalReferences": {
+      "type": "array",
+      "description": "schemaVersion 3+. A live reference site named in client correspondence, outside this skill's Figma-diff model. Passed through from the project map for a human visual check. See references/project-map.md.",
+      "items": {
+        "type": "object",
+        "required": ["url", "route", "note"],
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "route": { "type": "string", "minLength": 1 },
+          "note": { "type": "string", "minLength": 1 },
+          "source": { "type": "string" },
+          "checked": { "type": "string" }
+        }
+      }
+    },
+    "scheduledForDeletion": {
+      "type": "array",
+      "description": "schemaVersion 3+. A page or route with a CONFIRMED owner decision to remove it, passed through from the project map so a report states it loudly instead of burying it in a coverage table. A flagged-but-undecided page belongs in designSourceDefects, not here. See references/project-map.md.",
+      "items": {
+        "type": "object",
+        "required": ["route", "why", "decidedBy", "decidedOn"],
+        "properties": {
+          "route": { "type": "string", "minLength": 1 },
+          "why": { "type": "string", "minLength": 1 },
+          "decidedBy": { "type": "string", "minLength": 1 },
+          "decidedOn": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "required": ["summary", "severity", "owner"],
+      "properties": {
+        "id": { "type": ["string", "integer"] },
+        "component": { "type": "string" },
+        "summary": { "type": "string", "minLength": 1 },
+        "figma": { "type": "string" },
+        "live": { "type": "string" },
+        "figmaNodeId": { "type": "string" },
+        "severity": { "enum": ["high", "medium", "low", "motion"] },
+        "confidence": { "enum": ["verified", "visual-only", "suspected", "not-compared"] },
+        "owner": {
+          "description": "`both` is legitimate: when the Figma source is internally inconsistent, a finding can require a design decision AND a build change. Do not force it into one bucket.",
+          "enum": ["build", "design", "both", "content"]
+        },
+        "evidenceIds": { "type": "array", "items": { "type": "string" } },
+        "rootCause": { "type": "string" }
+      }
+    },
+    "viewport": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "cell": {
+      "type": "object",
+      "required": ["route", "breakpoint", "state", "figmaNodeId"],
+      "properties": {
+        "route": { "type": "string", "minLength": 1 },
+        "breakpoint": { "type": "integer", "minimum": 1 },
+        "state": { "type": "string", "minLength": 1 },
+        "figmaNodeId": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
