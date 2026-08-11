@@ -6,7 +6,8 @@ Use this shape for the human-facing report. Link to the run's `summary.md`,
 ## Scope and evidence
 
 - URLs and route/template families tested
-- Breakpoints and browser engines tested
+- Breakpoints and browser engines tested; physical devices tested, or an explicit
+  statement that none were used
 - Interaction phases, forms, links, vision, and optional standards tools run
 - Baseline used, or state that this was the first run
 - Anything skipped, capped, blocked, or not observable

@@ -1,5 +1,13 @@
 # Consuming a design spec
 
+## In this file
+
+- Fields read by Website QA
+- Matching page elements by text
+- Creating a spec when none exists
+- Running the check
+- Reading results and tolerances
+
 Everything else in this skill asks **"is the page self-consistent?"**. That finds
 drift without needing a design file, but it has a hard ceiling: it can never say
 which value was *intended*. Shown eleven sections starting at 54px and one at 102px,
@@ -32,7 +40,7 @@ The first is an observation. The second is a ticket.
 ## The fields this runner reads
 
 The full schema, including the fields written at build time that this runner ignores
-(`groups`, `states`, `decisions`, `sourceDefects`, `handoffs`), is in the shared contract.
+(`groups`, `states`, `decisions`, `sourceDefects`, `handoffs`), is in the shared format.
 `audit_design_spec.js` reads exactly these:
 
 `name` · `frameWidth` · `tolerance` · `container` · `containerSelector` ·
@@ -45,8 +53,8 @@ For reference, the shape:
 
 ```jsonc
 {
-  "name": "Executive Life — Homepage",
-  "figma": { "fileKey": "…", "nodeId": "238:112" },   // provenance only
+  "name": "Example Co — Homepage",
+  "figma": { "fileKey": "…", "nodeId": "238:112" },   // where the values came from
   "frameWidth": 1512,                                  // the Figma frame's width
   "tolerance": { "position": 4, "size": 2, "fontSize": 0.6, "lineHeight": 2 },
 
@@ -105,7 +113,7 @@ defect.
 **Deriving is the fallback, not the first move** — see the note at the top. When there is
 genuinely no spec, the extraction procedure (which values to read, how the modal gutter is
 chosen, how design-tool units map onto the fields, and what scaffolding to keep out) lives
-in the shared contract's *Deriving the values* section. Follow it there rather than a
+in the shared design-spec file's *Deriving the values* section. Follow it there rather than a
 second copy here, so the two sides cannot drift.
 
 One practical note for reading a Figma file specifically: pull the frame at `depth: 2`,

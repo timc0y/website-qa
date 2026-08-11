@@ -131,11 +131,23 @@ export async function visionCapture(page, { dir, width, prefix = '', overlap = 8
   const hidden = hideOverlays ? await page.evaluate(HIDE_SRC).catch(() => []) : [];
   const docHeight = await page.evaluate(() => document.documentElement.scrollHeight);
   const stride = Math.max(200, vh - overlap);
-  const total = Math.min(maxTiles, Math.max(1, Math.ceil(docHeight / stride)));
+  const maxY = Math.max(0, docHeight - vh);
+  const naturalOffsets = [];
+  for (let y = 0; y < maxY; y += stride) naturalOffsets.push(Math.round(y));
+  naturalOffsets.push(maxY);
+  // A cap is a sampling budget, not permission to ignore the bottom of the page.
+  // Spread capped captures across the complete document while retaining the first
+  // and final viewport. The old first-N strategy left 17,727px of a real home page
+  // entirely unseen and still sounded like a visual pass.
+  const offsets = naturalOffsets.length <= maxTiles
+    ? naturalOffsets
+    : Array.from({ length: maxTiles }, (_, i) => naturalOffsets[
+        Math.round(i * (naturalOffsets.length - 1) / Math.max(1, maxTiles - 1))
+      ]).filter((y, i, all) => i === 0 || y !== all[i - 1]);
 
   const tiles = [];
-  for (let i = 0; i < total; i++) {
-    const y = Math.min(i * stride, Math.max(0, docHeight - vh));
+  for (let i = 0; i < offsets.length; i++) {
+    const y = offsets[i];
     await page.evaluate(v => scrollTo(0, v), y);
     await page.waitForTimeout(settleMs);
     const lm = await page.evaluate(LANDMARKS_SRC).catch(() => ({}));
@@ -156,13 +168,15 @@ export async function visionCapture(page, { dir, width, prefix = '', overlap = 8
         : 'still animating when captured (two frames 350ms apart differ) — do not conclude anything ' +
           'is missing or low-contrast from this tile; re-capture or check a neighbouring tile',
       headings: lm.headings || [], sections: lm.sections || [] });
-    if (y >= docHeight - vh) break;
   }
 
   await page.evaluate(v => scrollTo(0, v), 0);
   if (hideOverlays) await page.evaluate(UNHIDE_SRC).catch(() => {});
   return { width, viewportHeight: vh, docHeight, tiles,
-    truncatedAt: total >= maxTiles && docHeight > total * stride ? `${maxTiles} tiles (page is ${docHeight}px)` : null,
+    sampledAt: naturalOffsets.length > offsets.length
+      ? `${offsets.length} evenly spread tiles from ${naturalOffsets.length} needed for contiguous coverage (page is ${docHeight}px)`
+      : null,
+    truncatedAt: null,
     overlaysHidden: hidden };
 }
 

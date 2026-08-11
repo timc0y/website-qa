@@ -1,9 +1,17 @@
 # Complementary standards tooling
 
+## In this file
+
+- How to choose an extra tool
+- Accessibility, performance and visual baselines
+- Crawling, HTML and technical SEO
+- Security and privacy
+- Source-repository checks
+
 Use the browser runner as the primary sweep. Add the tools below when the request
 names their concern; none replaces interaction and visual verification. Prefer an
 existing project-native script over adding a new dependency: it already knows the
-site's route model, content contracts, authenticated states, and deployment rules.
+site's routes, content rules, signed-in states and deployment setup.
 
 For the longer survey, trade-offs, and adoption order, read
 `tool-landscape.md`.
@@ -132,9 +140,9 @@ before browser QA. For static-first frameworks such as Astro:
 Repository checks prove source integrity; browser checks prove rendered behavior.
 Report them as separate evidence classes.
 
-For Astro specifically, look for existing route/source analysis and launch-contract
-scripts before introducing another crawler. Repository-native checks can map routes to
+For Astro specifically, look for existing route/source analysis and launch-check
+scripts before introducing another crawler. Project checks can map routes to
 components, validate real image dimensions, correlate source reuse with rendered
 similarity, run an exact 320px smoke pass, detect soft 404/page-identity failures, and
-verify deployed URL/canonical/robots/sitemap contracts. Those checks are project-aware
-evidence that a generic live-site scanner cannot infer.
+verify the deployed URL, canonical, robots and sitemap rules. Those checks understand the project
+in a way that a general live-site scan cannot.

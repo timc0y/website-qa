@@ -1,5 +1,13 @@
 # Website QA tool landscape
 
+## In this file
+
+- The current recommendation
+- Tools worth adopting, keeping optional or rejecting
+- Coverage by QA concern
+- Other agent skills reviewed
+- Suggested order for future additions
+
 Research date: 2026-08-03. This survey uses project documentation, source
 repositories, and standards as sources. It is a selection guide for the
 `website-qa` skill, not a recommendation to install every checker.

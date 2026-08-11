@@ -1,46 +1,67 @@
-# Website QA
+# Website Quality Skills
 
-An evidence-led website QA skill and Playwright runner for auditing rendered sites
-across routes, breakpoints, browsers, and interaction states.
+Independent, evidence-led skills for reviewing rendered websites:
 
-It combines deterministic browser checks with a required visual review pass. Findings
-are verified, severity-ranked, and separated from hazards or unconfirmed signals so the
-report stays useful rather than noisy.
+- `website-qa` finds functional, responsive, accessibility, metadata, runtime and
+  visual defects without needing a design reference.
+- `figma-parity` compares a rendered interface with exact Figma nodes, breakpoints
+  and states.
 
-## What it covers
+They run independently. Parallax can import their evidence manifests, and Forge can
+supply remote captures, without either service becoming a runtime dependency.
 
-- responsive layout and overflow
-- keyboard, focus, menus, tabs, accordions, and forms
-- links, console errors, failed requests, and page identity
-- accessibility and metadata signals
-- visual composition, crop quality, consistency, and polish
-- Chromium/WebKit differences and repeat-run regressions
-- optional design-spec conformance
+## Independence and integration
 
-The workflow is read-only: it does not submit forms, publish content, or mutate the
-site under review.
+Each skill is independently installable and answers one question on its own:
 
-## Install the skill
+| Skill | Proves alone | Never claims |
+|---|---|---|
+| `website-qa` | is this website broken? | that anything matches a design |
+| `figma-parity` | does this match its specific Figma nodes? | that the website is otherwise sound |
 
-Copy `skill/website-qa` into your agent's skills directory, preserving its internal
-folders. For Codex, for example:
+**Integration is by artifact, never by import.** These skills interoperate with other
+tools only by reading a declared output file when one happens to be present. There are
+no cross-project package dependencies, submodules or shared runtime code, and none
+will be added.
+
+- **Consumers tolerate absence.** "No manifest found" is a normal state that narrows
+  what can be concluded — not an error. Report what was lost instead of failing.
+- **Schemas evolve additively.** New fields only, with `schemaVersion` bumped; the
+  validator warns on an unknown newer version rather than rejecting it, so a consumer
+  built against v1 keeps working against a v2 packet.
+- **Provider identity survives.** A capture obtained elsewhere keeps its originating
+  `captureProvider` and is never relabelled as a local capture. A remote screenshot
+  service cannot establish Figma parity by itself — the Figma reference has to be
+  obtained and compared independently.
+- **Unknown conditions degrade confidence.** Where a capture cannot report a condition
+  — observed content width, whether the page's own scripts ran, whether the target
+  changed mid-run — the affected findings drop below `verified`. Unknown never defaults
+  to acceptable.
+
+**Shared contracts are duplicated, not extracted.** Where both skills need the same
+file — `references/design-spec.md` and `references/design-spec.schema.json` — each
+carries its own copy and `npm test` asserts they are byte-identical. Extracting them
+into a shared package would create precisely the coupling this layout avoids; the
+equality gate costs six lines and catches drift immediately.
+
+## Install
+
+Link both canonical skills into Codex, Claude, OpenCode and Gemini:
 
 ```sh
-cp -R skill/website-qa ~/.codex/skills/website-qa
+npm run sync:skills
 ```
 
-Then ask the agent to use `$website-qa` with a live, preview, or locally served URL.
+Use `npm run check:skills` to report installation drift without changing anything.
+To install only one skill elsewhere, copy its complete folder from `skill/`.
 
-## Run the browser harness directly
+## Run Website QA directly
 
 ```sh
 npm ci
 npx playwright install chromium webkit
-node skill/website-qa/runner/qa_runner.mjs https://example.com --out=qa-output
+node skill/website-qa/runner/qa_runner.mjs --url=https://example.com --out=qa-output
 ```
-
-See [`skill/website-qa/SKILL.md`](skill/website-qa/SKILL.md) for the complete protocol,
-flags, evidence model, and report format.
 
 ## Verify the repository
 
@@ -48,8 +69,8 @@ flags, evidence model, and report format.
 npm test
 ```
 
-This runs the detector fixtures, regression and cross-page checks, cascade checks, and
-the public-disclosure gate. CI also verifies the skill package metadata and links.
+This validates public disclosure, shared evidence contracts, both skill packages,
+the website detector/regression suites, and the Figma parity utilities.
 
 ## License
 

@@ -1,5 +1,14 @@
 # Website QA — platform notes, quirks, and reading the audits
 
+## In this file
+
+- Local runner and interactive browser differences
+- Browser and JavaScript quirks
+- How to read each audit
+- Missing-element and other false findings
+- Cross-browser limits
+- Checks that still need a person
+
 ## Two runtimes, same scripts
 The audit files are IIFEs whose trailing value is their result. The headless runner
 `eval`s them via `page.evaluate`; interactively you paste them into `javascript_exec`
@@ -19,7 +28,8 @@ to `window` for interactive hover diffing.
   navigating to the URL again.
 - **Multiple elements can share a class** (a nav toggle group = phone button + a
   hamburger). Disambiguate by SVG content / index.
-- **JS reads are the source of truth**; a blank capture is an artifact, not proof.
+- **Trust the JavaScript readings**; a blank screenshot may be a capture problem,
+  not proof that the page is blank.
 
 ## JavaScript interactions vs synthetic events
 Dropdowns, mega-menus, hover swaps, and hydrated UI are often JS-driven and **do
@@ -128,7 +138,7 @@ way this class shows up at all in automation.
 Cross-browser rendering (Safari/iOS specifics), z-index "dropdown behind footer"
 overlaps, "banner not filling viewport" intent, backend/CRM failures, JS field
 behaviour (comma-on-blur), and anything needing a design reference (exact spacing,
-"match Figma") — that last one needs a separate design-reference comparison pass.
+"match Figma") — that last one is the **figma-parity** skill's job.
 
 ## Platform-specific detectors are additive
 

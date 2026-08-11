@@ -66,6 +66,7 @@ export async function formAudit(page, { testBlurValidation = true, maxForms = 4 
       const submit = form.querySelector('[type=submit],button:not([type=button]),.w-button,[class*="submit"]');
       return {
         formIndex: fi, el: desc(form), name: form.getAttribute('name') || form.id || null,
+        visible: vis(form),
         action: form.getAttribute('action') || null,
         method: (form.getAttribute('method') || 'get').toLowerCase(),
         isWebflowForm: !!(wrap && /w-form/.test(cls(wrap))),
@@ -86,8 +87,10 @@ export async function formAudit(page, { testBlurValidation = true, maxForms = 4 
   });
 
   // ── blur validation: invalid value in, blur, does anything say so? Never submits. ──
+  const visibleInventory = inventory.filter(form => form.visible);
+
   if (testBlurValidation) {
-    for (const form of inventory.slice(0, maxForms)) {
+    for (const form of visibleInventory.slice(0, maxForms)) {
       for (const f of form.fields) {
         if (!f.selector || f.tag === 'select') continue;
         const bad = INVALID_FOR(f.type);
@@ -117,17 +120,17 @@ export async function formAudit(page, { testBlurValidation = true, maxForms = 4 
 
   // ── turn facts into findings ──
   const findings = [];
-  for (const form of inventory) {
+  for (const form of visibleInventory) {
     const where = form.name || form.el;
-    if (!form.successElement)
-      findings.push({ form: where, severity: 'high', confidence: 'measured',
-        issue: 'no success state — a visitor who submits gets no confirmation that anything happened' });
-    else if (form.successElement.isWebflowDefault)
+    if (!form.successElement && !form.redirect)
+      findings.push({ form: where, severity: 'medium', confidence: 'suspected',
+        issue: 'no discoverable static success state or redirect — submission was not exercised, so verify the live success path' });
+    else if (form.successElement?.isWebflowDefault)
       findings.push({ form: where, severity: 'medium', confidence: 'measured',
         issue: `success message is still Webflow's default text ("${form.successElement.text}")` });
     if (!form.errorElement)
-      findings.push({ form: where, severity: 'medium', confidence: 'measured',
-        issue: 'no error state — a failed submission fails silently' });
+      findings.push({ form: where, severity: 'low', confidence: 'suspected',
+        issue: 'no discoverable static error state — submission was not exercised, so verify the server-error path' });
     else if (form.errorElement.isWebflowDefault)
       findings.push({ form: where, severity: 'low', confidence: 'measured',
         issue: `error message is still Webflow's default text ("${form.errorElement.text}")` });
@@ -169,7 +172,8 @@ export async function formAudit(page, { testBlurValidation = true, maxForms = 4 
   }
 
   return {
-    forms: inventory.length,
+    forms: visibleInventory.length,
+    hiddenFormsDeferred: inventory.length - visibleInventory.length,
     note: 'No form was submitted. Fields were filled with deliberately invalid values to test ' +
           'blur validation and then cleared; submit was never clicked and Enter was never pressed.',
     findings, inventory

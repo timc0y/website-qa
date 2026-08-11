@@ -8,12 +8,13 @@
  *   review/<stamp>_<bp>/pairs.json    what was actually paired with what
  *   findings.json (optional)          your findings, incl. joint ownership
  *
- * Capabilities are DERIVED from the evidence, not declared by hand: a capability
- * is true only when a corresponding artifact exists. That is the rule the skill
- * states, so it should not be a matter of memory.
+ * Capture capabilities are derived from artifacts. Review conclusions are not:
+ * this script never claims inspection or parity. A separate hash-bound
+ * attestation records a named actor's verdict after review.
  *
  *   node build_manifest.mjs --run <run-dir> --map figma-map.json \
- *     --mode local-parity [--label desktop] [--findings findings.json] \
+ *     --plan <run-dir>/review-plan.json --mode local-parity \
+ *     [--label desktop] [--findings findings.json] \
  *     [--out figma-parity-manifest.json]
  *
  * Then always: node validate_manifest.mjs <out>
@@ -29,17 +30,27 @@ const arg = (n, d = null) => {
 };
 const run = path.resolve(arg('run', process.cwd()));
 const mapPath = arg('map');
+const planPath = arg('plan');
 const mode = arg('mode', 'local-parity');
 const label = arg('label', 'desktop');
 const findingsPath = arg('findings');
 const outPath = path.resolve(arg('out', path.join(run, 'figma-parity-manifest.json')));
-if (!mapPath) { console.error('usage: build_manifest.mjs --run <dir> --map figma-map.json --mode <mode> [--label desktop]'); process.exit(2); }
+if (!mapPath || !planPath) { console.error('usage: build_manifest.mjs --run <dir> --map figma-map.json --plan review-plan.json --mode <mode> [--label desktop]'); process.exit(2); }
 
 const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 const rel = (p) => path.relative(run, path.resolve(p));
 const sha256 = (p) => (fs.existsSync(p) ? crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex') : null);
 
-const rawMap = readJson(path.resolve(mapPath));
+const mapFile = path.resolve(mapPath);
+const planFile = path.resolve(planPath);
+const rawMap = readJson(mapFile);
+const plan = readJson(planFile);
+if (plan.provider !== 'figma-parity-plan' || plan.schemaVersion !== 1 || !Array.isArray(plan.cells) || !plan.cells.length) {
+  console.error('invalid or empty frozen review plan'); process.exit(1);
+}
+if (plan.source?.mapSha256 !== sha256(mapFile)) {
+  console.error('map changed after the review plan was frozen'); process.exit(1);
+}
 // A map may be flat (one route) or carry routes[]. Merge so shared keys survive.
 const wantedRoute = arg('route');
 const map = Array.isArray(rawMap.routes)
@@ -51,6 +62,10 @@ if (Array.isArray(rawMap.routes) && wantedRoute && !rawMap.routes.some((r) => r.
 const capturePath = path.join(run, 'live', `capture-${label}.json`);
 if (!fs.existsSync(capturePath)) { console.error(`missing capture contract: ${capturePath}\nRun capture.mjs first.`); process.exit(1); }
 const capture = readJson(capturePath);
+const planSha256 = sha256(planFile);
+if (capture.plan?.sha256 !== planSha256) {
+  console.error('capture was not produced from this frozen review plan'); process.exit(1);
+}
 
 // Newest pairs.json under review/, so the manifest describes the sheet you looked at.
 const reviewRoot = path.join(run, 'review');
@@ -62,6 +77,14 @@ const sideBySideDir = pairFiles.length ? path.dirname(pairFiles.at(-1)) : null;
 
 const route = map.route || new URL(capture.url).pathname;
 const breakpoint = capture.requestedContentWidth;
+if (plan.scope?.route !== route || plan.scope?.breakpoint !== breakpoint) {
+  console.error(`review plan scope ${plan.scope?.route} / ${plan.scope?.breakpoint}px does not match capture ${route} / ${breakpoint}px`); process.exit(1);
+}
+const capturedPath = new URL(capture.url).pathname.replace(/\/$/, '') || '/';
+const plannedPath = String(plan.scope.route).replace(/\/$/, '') || '/';
+if (capturedPath !== plannedPath) {
+  console.error(`capture URL path ${capturedPath} does not match frozen review-plan route ${plannedPath}`); process.exit(1);
+}
 const findings = findingsPath ? readJson(path.resolve(findingsPath)) : null;
 
 // --- evidence ---------------------------------------------------------------
@@ -72,8 +95,8 @@ for (const section of capture.sections) {
   const figmaImage = pair?.figma ? rel(pair.figma) : null;
   const liveImage = section.path ? rel(path.join(run, section.path)) : null;
   if (!figmaImage || !liveImage) continue; // unpaired cells belong in coverage.missing
-  // Unknown capture conditions must not read as verified.
-  const conditionsKnown = section.observedContentWidth === breakpoint && capture.target?.stable !== false;
+  // This packet records observations only. Review conclusions belong in a
+  // separate, hash-bound attestation produced after the artifacts are inspected.
   const limitations = [...(section.limitations || [])];
   if (section.observedContentWidth !== breakpoint) {
     limitations.push(`content width was ${section.observedContentWidth}px, not the ${breakpoint}px the Figma frame is drawn at; horizontal findings are unsafe`);
@@ -92,16 +115,26 @@ for (const section of capture.sections) {
       settleMethod: section.settleMethod ?? null,
     },
     comparison: { sideBySidePath: sideBySideDir && pair?.sideBySide ? rel(path.join(sideBySideDir, pair.sideBySide)) : null },
-    inspected: true,
-    confidence: conditionsKnown ? 'verified' : 'visual-only',
     limitations,
   });
 }
 
 // --- coverage ---------------------------------------------------------------
 const cell = (nodeId, state = 'default', bp = breakpoint) => ({ route, breakpoint: bp, state, figmaNodeId: nodeId });
+const cellKey = (entry) => `${entry.route}\0${entry.breakpoint}\0${entry.state}\0${entry.figmaNodeId}`;
+const requested = plan.cells.map(({ route: plannedRoute, breakpoint: plannedBreakpoint, state, figmaNodeId }) => ({
+  route: plannedRoute, breakpoint: plannedBreakpoint, state, figmaNodeId
+}));
+const wanted = new Set(requested.map(cellKey));
 const compared = evidence.map((e) => cell(e.figma.nodeId, e.state, e.breakpoint));
-const declaredMissing = (map.coverage?.missing || []).map((m) => ({ ...cell(m.figmaNodeId, m.state, m.breakpoint ?? breakpoint), reason: m.reason }));
+for (const observed of compared) {
+  if (!wanted.has(cellKey(observed))) {
+    console.error(`captured evidence is outside the frozen review plan: ${cellKey(observed).replaceAll('\0', ' / ')}`); process.exit(1);
+  }
+}
+const declaredMissing = (map.coverage?.missing || [])
+  .map((m) => ({ ...cell(m.figmaNodeId, m.state, m.breakpoint ?? breakpoint), reason: m.reason }))
+  .filter((entry) => wanted.has(cellKey(entry)));
 
 // A "covered via another route" claim is only as good as the registry entry
 // backing it. Verify the componentId actually has an instance at the claimed
@@ -115,17 +148,33 @@ for (const c of map.coverage?.coveredViaComponent || []) {
   const instances = registry[c.componentId] || [];
   const match = instances.find((i) => i.route === c.coveredVia && i.breakpoint === c.breakpoint);
   if (match) {
-    coveredViaComponent.push({ ...cell(c.figmaNodeId ?? match.figmaNodeId ?? null, c.state, c.breakpoint), coveredVia: c.coveredVia, componentId: c.componentId });
+    const covered = { ...cell(c.figmaNodeId ?? match.figmaNodeId ?? null, c.state, c.breakpoint), coveredVia: c.coveredVia, componentId: c.componentId };
+    if (wanted.has(cellKey(covered))) coveredViaComponent.push(covered);
+    else console.error(`WARNING: coveredViaComponent claim is outside the frozen plan and was ignored: ${c.componentId} / ${c.coveredVia} / ${c.breakpoint}px`);
   } else {
-    downgradedToMissing.push({
+    const downgraded = {
       ...cell(c.figmaNodeId ?? null, c.state, c.breakpoint),
       reason: `claimed "covered via ${c.coveredVia}" for component ${c.componentId}, but no registry entry backs a ${c.breakpoint}px instance on that route; downgraded to missing`,
-    });
-    console.error(`WARNING: unverifiable coveredViaComponent claim downgraded to missing: ${c.componentId} / ${c.coveredVia} / ${c.breakpoint}px`);
+    };
+    if (wanted.has(cellKey(downgraded))) downgradedToMissing.push(downgraded);
+    console.error(`WARNING: unverifiable coveredViaComponent claim ${wanted.has(cellKey(downgraded)) ? 'downgraded to missing' : 'is outside the frozen plan and was ignored'}: ${c.componentId} / ${c.coveredVia} / ${c.breakpoint}px`);
   }
 }
 declaredMissing.push(...downgradedToMissing);
-const requested = [...compared, ...declaredMissing.map(({ reason, ...c }) => c), ...coveredViaComponent.map(({ coveredVia, componentId, ...c }) => c)];
+// Component reuse is context, not proof. It remains an annotation and cannot
+// satisfy a frozen coverage cell without evidence from this exact route/state.
+const accounted = new Set([...compared, ...declaredMissing].map(cellKey));
+for (const planned of requested) {
+  if (!accounted.has(cellKey(planned))) {
+    const reuse = coveredViaComponent.find((entry) => cellKey(entry) === cellKey(planned));
+    declaredMissing.push({
+      ...planned,
+      reason: reuse
+        ? `frozen review-plan cell has no route-specific evidence; component reuse is annotated via ${reuse.coveredVia} but does not satisfy coverage`
+        : 'frozen review-plan cell has no paired capture evidence'
+    });
+  }
+}
 
 // --- capabilities, derived from what actually exists -------------------------
 const hasDiff = evidence.some((e) => e.comparison.diffPath);
@@ -135,7 +184,7 @@ const capabilities = {
   liveScreenshots: evidence.some((e) => e.live.path || e.live.artifactId),
   responsive: new Set(requested.map((c) => c.breakpoint)).size > 1,
   numericMeasurements: Boolean(capture.measurements),
-  visualComparison: evidence.every((e) => e.inspected) && evidence.length > 0,
+  visualComparison: false,
   pixelDiff: hasDiff,
   interactiveStates: requested.some((c) => c.state !== 'default'),
   interactionTransitions: fs.existsSync(path.join(run, 'live', 'verify-interactive.json')),
@@ -161,10 +210,11 @@ if (!capture.masks?.length) limitations.push('No masks were applied; no volatile
 limitations.push(...(findings?.limitations || []));
 
 const manifest = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   provider: 'figma-parity',
   generatedAt: new Date().toISOString(),
   targetUrl: capture.url,
+  plan: { path: rel(planFile), sha256: planSha256, mapSha256: plan.source.mapSha256, frozenAt: plan.frozenAt },
   source: { kind: 'figma', fileKey: map.fileKey, fileUrl: map.fileUrl },
   execution: { mode, capabilities, captureProviders: [...new Set(evidence.map((e) => e.live.captureProvider))] },
   target: capture.target,

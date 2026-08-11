@@ -1,82 +1,91 @@
-# Execution modes
+# Ways to run a Figma comparison
 
-Choose one mode per run. The mode describes how you obtained the evidence.
-Capabilities describe what you actually proved. Never infer capabilities from
-the mode name alone.
+## In this file
 
-## The capture contract
+- Fields every capture records
+- Local, interactive and Forge methods
+- Rules for pixel comparisons
+- Checks recorded in the summary file
+
+Choose one method per run. Record how the images were made and what the run
+actually checked. The method's name alone proves nothing.
+
+Every method resolves a frozen review plan. Capture providers may differ, but
+none may construct the requested denominator from the evidence they happened to
+produce.
+
+## What every capture must record
 
 Something must produce the pixels: local Playwright, an already-open browser, or
-Forge. Whichever it is, it must supply the same fields for each capture. This
-requirement is what makes the modes interchangeable, without making their
-evidence equivalent.
+Forge. Whichever it is, it must supply the same fields for each capture. These
+common fields let the same report format describe every method without
+pretending that every method checked the same things.
 
 | Field | Meaning when absent (`null`) |
 |---|---|
-| `path` or `artifactId` + `sha256` | no evidence at all; the cell is `not-compared` |
-| `captureProvider` | never absent; identity is preserved, never relabelled |
+| `path` or `artifactId` + `sha256` | no saved image; the cell is `not-compared` |
+| `captureProvider` | always name the tool that made the image |
 | `observedContentWidth` | horizontal findings cannot be `verified` |
 | `settleMethod` | geometry findings drop to `visual-only` |
 | `scriptsExecuted` | script-driven behavior findings drop to `suspected` |
 | `viewport` | the run cannot claim `responsive` |
 
-`null` means unknown. An unknown value degrades confidence. It never defaults to
-"fine." `scripts/capture.mjs` fills every field for a local run, and it is the
-reference implementation.
+`null` means unknown. It never defaults to "fine." Capture conditions constrain
+what a later reviewer may conclude; they do not create a conclusion themselves.
+`scripts/capture.mjs` fills every field for a local run.
 
 ## `local-parity`
 
 Use this mode when you can access the Figma nodes and a local, preview, or
 public website from the current environment.
 
-Expected capabilities: design node data and renders, live screenshots, numeric
+Expected checks: design node data and renders, live screenshots, numeric
 measurements, visual comparison, and the requested breakpoint coverage.
 Interactive states, pixel diffs, cross-browser comparison, and regression
 history are optional. Declare each one separately.
 
-This mode is complete when the requested matrix is accounted for and the
-manifest validates.
+This method is done when every requested comparison is covered or named as
+missing and the summary file passes validation.
 
 ## `interactive-parity`
 
-Use this mode when the browser already carries authentication, local storage,
+Use this method when the browser already carries authentication, local storage,
 feature flags, or a state that needs trusted pointer or keyboard input. Save the
-screenshots and the measurements outside the browser session, so the evidence
+screenshots and measurements outside the browser session, so the proof
 survives the run.
 
-This mode does not imply cross-browser support or repeatability. Record the
+This method does not imply cross-browser support or repeatability. Record the
 browser, the profile-derived state, the manual actions, and any state you could
 not reproduce.
 
-This mode is complete when durable artifacts exist for every compared matrix
-cell.
+This method is done when a saved image and result exist for every comparison.
 
 ## `forge-live-evidence`
 
-Use this mode when Forge captures the rendered website or preview. Figma access
-and the parity judgment stay this skill's responsibility. Preserve:
+Use this method when Forge captures the rendered website or preview. This skill
+still reads Figma and judges the match. Keep:
 
-- the Forge artifact IDs and the SHA-256 hashes;
+- the Forge file IDs and SHA-256 hashes;
 - the source URL, and the requested and observed viewport;
-- the workspace or commit provenance, when available;
-- `captureProvider: "forge"` on the affected evidence.
+- the workspace or commit, when available;
+- `captureProvider: "forge"` on the affected files.
 
 A Forge URL review normally supplies screenshots and accessibility structure. It
 does not by itself prove design node extraction, numeric CSS measurements,
 interaction transitions, pixel diffs, cross-browser behavior, or full matrix
 coverage.
 
-**This mode cannot set two capabilities to true**, because nothing local drove
+**This method cannot claim two checks**, because nothing local drove
 the page. `interactionTransitions` is always `false`. `numericMeasurements` is
 `false`, unless some other capture supplied real computed styles. Do not
 compensate by reasoning from the screenshot. With no DOM to fall back on, the
-Figma node data is your only numeric source. This is why "read the node, not
-the render" is load-bearing here, not merely advisable.
+Figma node data is your only numeric source. Read the node rather than trying to
+measure its screenshot.
 
-This mode is complete when you retrieved and inspected the Forge images, paired
-them with specific Figma nodes, and made every missing capability explicit.
+This method is done when you inspected the Forge images, paired them with exact
+Figma nodes and listed every missing check.
 
-## Never diff across providers
+## Compare pixels only when the same tool made both images
 
 Images from different providers come from different browsers, operating
 systems, and font stacks. Glyph rasterization and antialiasing alone will light
@@ -84,14 +93,14 @@ up a diff mask, and that noise is indistinguishable from a real finding.
 `scripts/compare_images.py` refuses a cross-provider diff, unless you override
 it explicitly.
 
-Pixel diffs earn their place on **same-provider, same-URL, across-run**
+Pixel differences are useful on **same-tool, same-URL, across-run**
 comparisons. That comparison is regression testing, not parity. For a
 Figma-render-versus-live pair, expect the dimensions to differ, because a height
 delta usually *is* the finding.
 
-## Capability vocabulary
+## Checks recorded in the summary file
 
-A manifest declares booleans for:
+The summary file records true/false values for:
 
 - `figmaNodeData`
 - `figmaRenders`
@@ -106,8 +115,8 @@ A manifest declares booleans for:
 - `crossBrowser`
 - `regression`
 
-Set a capability to `true` only when the evidence packet contains the
-corresponding evidence. `false` and omitted both mean the capability is
-unavailable. Prefer `false` for clarity. `scripts/build_manifest.mjs` derives
-these values from the artifacts that exist. This is the safer default; it does
-not ask you to remember them.
+Set a value to `true` only when the saved files prove that operation ran. `false`
+and an omitted value both mean it was unavailable; prefer `false` because it is
+clearer. In an observation-only manifest, `visualComparison` remains `false`:
+paired files prove preparation, not inspection. A valid review attestation is
+the separate proof that a named actor judged exact evidence against a criterion.

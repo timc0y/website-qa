@@ -37,8 +37,8 @@ console.log('\ncrosspage.mjs — findings that only exist between pages\n');
 // ── the motivating defect ──────────────────────────────────────────────────────
 {
   const r = crossPageAudit(rep(
-    page('https://s.com/team/jane', { title: 'Exec Life' }),
-    page('https://s.com/team/bob',  { title: 'Exec Life' })));
+    page('https://s.com/team/jane', { title: 'Example Co' }),
+    page('https://s.com/team/bob',  { title: 'Example Co' })));
   const f = r.findings.find(x => x.kind === 'sharedTitle');
   ok('two items sharing one <title> → high finding', f && f.severity === 'high', JSON.stringify(kinds(r)));
   ok('  …recognised as templated (same path group)', f && f.group === '/team/');
@@ -48,8 +48,8 @@ console.log('\ncrosspage.mjs — findings that only exist between pages\n');
 {
   // distinct titles in the same group must be silent
   const r = crossPageAudit(rep(
-    page('https://s.com/team/jane', { title: 'Jane Doe — Exec Life' }),
-    page('https://s.com/team/bob',  { title: 'Bob Roe — Exec Life' })));
+    page('https://s.com/team/jane', { title: 'Jane Doe — Example Co' }),
+    page('https://s.com/team/bob',  { title: 'Bob Roe — Example Co' })));
   ok('distinct titles per item → no title finding', !kinds(r).includes('sharedTitle'), JSON.stringify(r.findings));
 }
 
@@ -113,8 +113,8 @@ console.log('\ncrosspage.mjs — findings that only exist between pages\n');
 // ── cross-group duplication is reported, but not blamed on a template ──────────
 {
   const r = crossPageAudit(rep(
-    page('https://s.com/about', { title: 'Exec Life' }),
-    page('https://s.com/contact', { title: 'Exec Life' })));
+    page('https://s.com/about', { title: 'Example Co' }),
+    page('https://s.com/contact', { title: 'Example Co' })));
   const f = r.findings.find(x => x.kind === 'sharedTitle');
   ok('duplication across unrelated paths → reported without a template claim',
     f && f.group === null && !/template/.test(f.issue), JSON.stringify(f));

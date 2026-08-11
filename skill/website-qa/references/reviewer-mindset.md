@@ -1,5 +1,13 @@
 # The reviewer's mindset
 
+## In this file
+
+- Why false findings are costly
+- Five questions that create useful checks
+- Where automated QA fails
+- How to control false positives
+- How to add a new real-world failure
+
 Why a site passes an automated sweep and still comes back from review covered in
 comments — and how to close that gap on purpose rather than by adding rules one bug
 at a time.

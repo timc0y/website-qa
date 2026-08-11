@@ -1,356 +1,249 @@
 ---
 name: figma-parity
 description: >-
-  Compare an implemented website or web app with its Figma source at matching
-  breakpoints and states. Use this skill for Figma parity checks, design QA, and
-  pixel-level review. Use it for design-to-code verification. Use it to check
-  whether a live, preview, local, Astro, React, Webflow, or other rendered
-  interface matches its design. This skill produces measured design-vs-rendered
-  findings, paired and diff images, design-source defects, explicit coverage, and
-  a portable evidence manifest. It can supply specialist evidence to Parallax, or
-  use Forge captures. It runs independently of both.
+  Check whether a built website matches specific Figma nodes at the same widths
+  and states. Use for design QA, pixel-level review and design-to-code checks on
+  live, preview or local sites. Produces measurements, paired images, confirmed
+  differences and a clear list of anything that could not be compared.
 ---
 
 # Figma parity
 
-Compare a rendered interface with its **specific Figma source**. Produce measured,
-reviewable evidence. Do not reduce parity to a screenshot similarity score.
+Compare a built page with its exact Figma source. Use measurements and paired
+images, then explain the differences in plain English. A similarity score alone
+is not enough.
 
-## Independence boundary
+Use `website-qa` separately when the user also wants broken links, forms,
+accessibility, SEO, console errors or general website defects.
 
-This skill owns Figma interpretation, rendered-state comparison, and parity findings.
-It can run without `website-qa`, Parallax, Forge, or a repository.
+## Rules
 
-- `website-qa` answers **is the website broken?** Run it separately when you need
-  defect coverage. An import of its output is not parity evidence. Console errors,
-  failed requests, and overflow sweeps are *capture conditions* here. Record them as
-  capture conditions and hand defect-hunting to `website-qa`. Do not grow a second QA
-  skill inside this one.
-- Parallax may invoke this skill and import `figma-parity-manifest.json`. This skill
-  does not need to know how Parallax prioritizes product findings. Because Parallax
-  consumes the packet, keep manifest changes **additive** under a raised
-  `schemaVersion`. The validator warns on an unknown field. It does not fail on one.
-- Forge may supply rendered screenshots or preview provenance. Preserve provider
-  identity. State the capabilities Forge did not execute. Forge cannot establish
-  Figma parity alone. This skill must still obtain the Figma reference and perform
-  the comparison. Capture is an adapter behind one contract. See
-  [execution-modes.md](references/execution-modes.md).
+1. Compare a specific Figma node with a specific page element and state. If the
+   node cannot be isolated, mark the result `visual-only` or `unverified`.
+2. Match width, content, state, colour scheme, locale and data. A different test
+   condition is missing coverage, not a build defect.
+3. Measure the page's content width. Browser chrome and scrollbar space can make
+   the viewport narrower than the requested window.
+4. Confirm a missing element with both a clean screenshot and a page-structure
+   check. A selector miss is not proof.
+5. Use pixel differences to locate a change, then inspect it. Fonts, image
+   encoding and moving content can change pixels without changing the design.
+6. Compare images made by the same capture method. Different methods can render
+   fonts and colours differently.
+7. Keep Figma mistakes separate from build mistakes. Use `designSourceDefects`
+   for Figma, `findings` for the build and `docDrift` for stale project notes.
+8. Treat an unknown condition as unresolved. Do not turn it into a pass.
 
-## Non-negotiable evidence rules
+## Choose how to run it
 
-1. **Compare a specific node in a specific state.** Compare each rendered element
-   with the exact Figma node or variant. Never compare it with a nearby global
-   token. If you cannot isolate the node, label the observation `visual-only` and
-   `unverified`.
-2. **Match the conditions.** Match frame width, viewport width, state, color
-   scheme, locale, content, and relevant data before you compare. A mismatch in
-   conditions is a coverage limitation. It is not a product defect. **The window
-   width is not the content width.** A reserved scrollbar gutter biases every
-   horizontal measurement, and it does this silently.
-3. **Confirm an absence with two signals.** Confirm a missing element with a clean
-   screenshot and with rendered-structure inspection. A selector miss alone is not
-   enough.
-4. **Treat a pixel diff as evidence, not as a verdict.** Font rasterization,
-   antialiasing, image encoding, and dynamic content create pixel changes with no
-   design defect behind them. Use a diff to locate the change. Then verify the
-   structure and the measurements. Never diff a capture from one provider against
-   a capture from a different provider.
-5. **Read the node. Do not read the render.** Base every color, gradient, and
-   alignment claim on the node's own `fills` and coordinates. A composited export
-   can mislead you about exactly these properties, and a finding built on a
-   misread export usually gets reported as High.
-6. **Treat an unknown condition as unresolved, not as acceptable.** A capture can
-   fail to establish the observed content width, whether the page's own scripts
-   ran, or whether the target changed mid-run. Each such gap lowers confidence.
-   It never defaults to acceptable.
-7. **Discover a control before you drive it.** A guessed selector fails in a way
-   you cannot tell apart from a broken control. A guess therefore manufactures a
-   false High.
-8. **Keep the owners separate.** File a Figma contradiction under
-   `designSourceDefects`. File a build mismatch under `findings`. File a stale
-   project doc under `docDrift`. The owner `both` is correct when the Figma source
-   itself is inconsistent.
+Read [execution-modes.md](references/execution-modes.md), then use the strongest
+available method:
 
-## Choose an execution mode
+- **`local-parity`** — preferred. Read Figma, capture the site, take
+  measurements and compare the images locally.
+- **`interactive-parity`** — use an already-open browser for signed-in or
+  carefully prepared states. Save the images before the session ends.
+- **`forge-live-evidence`** — Forge supplies the live screenshots. This skill
+  still reads Figma and performs the comparison. List any missing interaction,
+  measurement or width checks.
 
-Read [execution-modes.md](references/execution-modes.md). Select the strongest
-available mode. Record its exact capabilities in the manifest.
+Run the bundled commands from the directory containing this file and `scripts/`,
+or use their full paths. Save maps, captures and reports in the reviewed
+project's approved private work folder.
 
-- **`local-parity`**: the preferred mode. Obtain the Figma data or renders,
-  capture the site locally or by public URL, measure it, compare the images, and
-  inspect the relevant states.
-- **`interactive-parity`**: use an already-open browser for authentication or for
-  a trusted pointer state. Capture durable artifacts before you end the session.
-- **`forge-live-evidence`**: a reduced mode. Forge supplies the rendered live
-  screenshots. This skill still obtains the Figma reference and performs the
-  comparison. State any missing interaction, measurement, or breakpoint coverage
-  explicitly.
+## Work in this order
 
-A run is complete only when you have compared every requested route, breakpoint,
-and state combination, or listed it in `coverage.missing` with a reason.
+### 1. List every comparison
 
-## Workflow
+Look for `FIGMA.md`, `docs/figma.md` or `figma-map.json` in the project first.
+Read [project-map.md](references/project-map.md). The map should link each route,
+component, width and state to its Figma node and live selector.
 
-### 1. Scope a comparison matrix
+For a single page or component, keep the list narrow. For a site-wide review,
+include every relevant route and reused component. Before marking a mobile or
+desktop design as missing, check whether another instance of the same component
+contains that state.
 
-**Look for a project Figma map first.** Check for `FIGMA.md`, `docs/figma.md`, or
-a `figma-map.json` beside them. A repository built from Figma usually already
-records the node-to-selector pairing, the breakpoint mapping, and the
-known-accepted mismatches. Reading this map is how you inherit intent instead of
-inventing it. Read [project-map.md](references/project-map.md). If no map exists,
-write one as a by-product of this run, so the next review starts where this one
-finished.
+Record:
 
-**Build or refresh the component registry once per project, not once per
-route.** List every Figma page. Then list every named component and every
-component instance on each page, and record which route and which breakpoint
-each instance belongs to. Store this list in the map's `components` field. See
-[project-map.md](references/project-map.md) for the exact shape. Do this scan
-once, before you scope any single route. A component crawl repeated per route
-wastes work and drifts as the file changes.
+- the live, preview or local URL;
+- each Figma file key and node ID;
+- routes, components, widths, states, themes, locales and data cases; and
+- the repository commit or preview version when available.
 
-**Use the registry to resolve a missing breakpoint before you call it a gap.**
-A route can lack a mobile frame while a sibling route carries the same
-component with a verified mobile frame. Check the registry first. If another
-route's instance of the same component has the breakpoint you need, mark the
-cell "covered via `<other-route>`," not "missing." Report a real gap only when
-no route anywhere carries the component at that breakpoint. This check belongs
-in the matrix, so record it in `coverage`, not only in your own head.
+Read [figma-setup.md](references/figma-setup.md). Record missing frames,
+ambiguous variants, unresolved variables and placeholder content before the
+review. Also record any live animation or website reference supplied outside
+Figma. It needs a separate human comparison rather than being silently dropped.
 
-Collect:
+This step is done when every requested comparison has a Figma node and capture
+plan, or a named blocker. Put the complete denominator in
+`figma-map.json.reviewPlan.cells`, then freeze the route and breakpoint before
+capturing:
 
-- the live, preview, or local URL;
-- the Figma file key and the node ID for every reference frame or component;
-- the routes or components, breakpoints, states, themes, locales, and data cases;
-- the repository commit or the preview revision, when available.
+```bash
+node scripts/freeze_plan.mjs --map figma-map.json --route /service-b \
+  --breakpoint 393 --out <run-dir>/review-plan.json
+```
 
-Use the Figma frame widths as the default viewport widths. A framework breakpoint
-is an adapter, not a universal default. Choose the interactive mode for an
-authenticated state or for an already-open state.
+Read `references/review-plan.schema.json` when producing or consuming the plan.
+Do not edit the map after freezing it; create a new plan when scope changes.
 
-Read [figma-setup.md](references/figma-setup.md). Record a missing frame, an
-ambiguous variant, an unresolved variable, scaffolding, and placeholder content
-before you review the build.
+### 2. Record what Figma intends
 
-**Also ask whether an external reference exists.** A client sometimes points at a
-live site that does not appear in Figma at all. One real example: "not really
-following the animation reference at example.com/services." Check the client
-correspondence and comments for a bare URL next to the Figma link. If one exists,
-record it in the project map under `externalReferences`. See
-[project-map.md](references/project-map.md). A comparison against this URL sits
-outside this skill's Figma-diff model. Hand it to a human visual check instead of
-dropping it. This skill has no comparison engine for an external reference. A
-silently discarded reference is still worse than a named gap.
+Use an existing design spec when one exists. Otherwise create one using
+[design-spec.md](references/design-spec.md). Record exact geometry, type, colour,
+components and states against their node IDs. Record contradictions in Figma as
+`sourceDefects` instead of choosing whichever value makes the build look right.
 
-**Completion:** every requested cell has a Figma node and a capture plan, or it has
-a named blocker. The component registry exists and is current for this run, and
-every "missing breakpoint" cell was checked against it before you named it a gap.
+Load the current Figma design-to-code prerequisite before calling
+`get_design_context`. Export each exact node. Prefer a node screenshot over a
+crop from a full page. If cropping is unavoidable, use
+`scripts/crop_figma_sections.py` and record how the crop was aligned.
 
-### 2. Establish the design intent numerically
+Keep the image, node ID, dimensions, scale and time together.
 
-Use an existing design spec when one exists. Otherwise, derive one and save it with
-[`references/design-spec.md`](references/design-spec.md). Pull the section geometry
-at a shallow depth. Then fetch the exact descendant node for anything likely to
-become a finding.
+### 3. Capture the matching page
 
-Record a Figma contradiction immediately in `sourceDefects`. Never choose whichever
-frame makes the build look correct.
-
-**Completion:** the intended geometry, typography, color, components, and states
-are tied to specific nodes. Mark an unresolved value as unverified.
-
-### 3. Render the Figma references
-
-Use the available Figma connector to export each scoped node. Prefer a direct node
-screenshot over a crop of a full-page frame. When only a full frame is available,
-use `scripts/crop_figma_sections.py` and record the inferred alignment.
-
-Keep the original render, the node ID, the exported dimensions, the scale, and the
-timestamp together. Do not crop browser chrome, an annotation, a cursor, or a
-redline into the reference.
-
-**Completion:** every planned reference is a durable image with node provenance.
-
-### 4. Capture matching rendered states
-
-Read [capture-determinism.md](references/capture-determinism.md). Then run the
-harness:
+Read [capture-determinism.md](references/capture-determinism.md), then run:
 
 ```bash
 node scripts/capture.mjs --url <url> --width 1512 --label desktop \
-  --map figma-map.json --out <run-dir>
+  --map figma-map.json --plan <run-dir>/review-plan.json --out <run-dir>
 ```
 
-The harness probes the reserved scrollbar gutter and compensates for it. It sweeps
-scroll-linked reveals. It settles the fonts, the images, and the height. It
-fingerprints the served document at the start and at the end. It records whether
-the page's own scripts ran. It writes `live/capture-<label>.json`, the capture
-contract every provider must satisfy. Run it twice. Two agreeing runs are your only
-cheap evidence that the page is stable.
+Run each capture twice. Two matching runs show that fonts, images, animation and
+page height have settled.
 
-Check three fields before you compare anything. A `contentWidthMatches: false`
-value invalidates every horizontal finding. A `target.stable: false` value means
-the page was republished mid-run. An unexecuted primary bundle means you are
-looking at an unfinished page.
+Before comparing, check:
 
-At minimum, whatever the provider:
+- `contentWidthMatches` is true;
+- `target.stable` is true; and
+- the page's main JavaScript ran when the page needs it.
 
-- set the exact CSS viewport width and a fixed height;
-- wait for the fonts, the images, and the hydration to settle;
-- disable the animations, or let them finish, consistently;
-- use matching content, data, and state;
-- record every intentionally masked volatile region;
-- capture the full page, or the same component or section boundary Figma uses.
+Use `scripts/live_probe.js` for section measurements. Read only the relevant
+part of [platform-adapters.md](references/platform-adapters.md) when a framework
+needs special handling.
 
-Use `scripts/live_probe.js` for section mapping and measurements. For
-framework-specific behavior, read only the relevant adapter in
-[platform-adapters.md](references/platform-adapters.md).
+### 4. Compare the result
 
-**Completion:** each rendered capture names its URL, viewport, state, settle
-method, provenance, masks, and limitations.
+Check four things:
 
-### 5. Compare in four passes
+1. **Structure** — presence, count, order, layout, responsive replacement,
+   assets and content.
+2. **Measurements** — padding, size, type, colour, opacity, SVG fills, gaps and
+   alignment. Compare top-to-top text positions rather than copying Figma's box
+   gaps directly.
+3. **Appearance** — crop, focal point, hierarchy, density, shadows, gradients,
+   texture, icon weight and collisions.
+4. **Section joins** — compare the backgrounds of every neighbouring pair of
+   sections. Two sections can each match Figma while still forming a wrong seam.
 
-1. **Structure:** presence, count, order, arrangement, responsive substitution, and
-   correct asset and content role.
-2. **Measured intent:** section padding, component geometry, type, color, gaps, and
-   alignment. Compare top-to-top offsets around text, because a CSS line box and a
-   Figma glyph bound differ. Two properties are easy to skip, because they rarely
-   appear in a node's headline description. Check them explicitly on every
-   section. Check **`opacity`** on body text and on every overlay, not only on a
-   scrim. Check **icon or SVG `fill`** on each icon instance, not only on the
-   section background. A brighter or a dimmer token on one icon in a row is
-   invisible to a section-level color check. It is obvious to a person scanning
-   the page.
-3. **Visual character:** crop and focal point, hierarchy, density, shadow,
-   gradient, texture, icon weight, and collision.
-4. **Boundary and adjacency:** for every pair of vertically adjacent sections, diff
-   the *computed* background of one against the computed background of the other.
-   Do not diff each section only against its own Figma node. Two sections can each
-   match their own node exactly, and still produce a visible seam. One real
-   example: "white background above, pale blue background below." No single-node
-   comparison can catch a seam like this. Run this pass on every page in the
-   matrix. Do not run it on a sample only.
-
-Build the side-by-side images with `scripts/compose_review.py`. **Always pass
-`--map`**, so the tool matches pairs by section name against a declared node:
+Create paired images with a map so names, rather than filename numbers, decide
+which images belong together:
 
 ```bash
 python3 scripts/compose_review.py --figma-dir figma --live-dir live \
   --map figma-map.json --label desktop --breakpoint desktop-1512 --out review
 ```
 
-Without `--map`, the tool falls back to a match on the two-digit filename index.
-This pairs `02-nav` with `02-trust-bar` and produces a nonsense sheet, and it does
-this *without an error*. The tool warns and records the fallback mode in
-`pairs.json`. Treat that warning as a defect in the run.
+Treat a fallback to filename-number matching as a failed run. Read
+[visual-diff.md](references/visual-diff.md) before interpreting
+`scripts/compare_images.py` output.
 
-When two images have identical dimensions, run `scripts/compare_images.py` for an
-objective diff mask and for metrics. The dimensions usually will not match. A
-height delta is normally the finding itself, so expect the measurement, not the
-diff, to carry the report. Read [visual-diff.md](references/visual-diff.md) before
-you interpret a result.
+This step is done when every image pair has been inspected and each reported
+difference points to a node plus a measurement, or clearly labelled visual proof.
 
-**Completion:** you inspected every image pair. Every reported delta rests on a
-specific node plus a measurement, or on clearly labeled visual evidence.
+### 5. Check controls and responsive states
 
-### 6. Inspect interactive and responsive states
-
-**Discover the real control hooks first. This step is not optional.**
+Discover the real controls before trying to click them:
 
 ```bash
 node scripts/discover_controls.mjs --url <url> --out controls.json
 ```
 
-The tool lists the framework `data-*` hooks, the native and ARIA controls, and the
-class-name candidates. It flags every control that is an `<a href>`, because a
-synthetic click on this control will **navigate**, not toggle. Prefer a `data-*`
-hook over a class name. A class gets restyled. A hook stays wired.
+Test every discovered non-link control on every page in scope. Check menus,
+dialogs, accordions, tabs, sliders, focus, hover, validation and result states.
+Prove that the state changed by checking an attribute, panel size or transform.
+A forced-open panel proves its layout, not the control that opens it.
 
-A skip of this step produces the most expensive failure mode in the whole
-workflow. A guessed selector yields a click timeout and an unchanged transform.
-These two symptoms read exactly like a dead control and a broken carousel, and a
-report writer records them as High. Verify a state change numerically. Check an
-attribute flip, a panel height, or a track transform. Do not rely on sight alone.
+Check widths between the supplied Figma frames for overflow and reflow. Do not
+invent design intent for a width Figma does not cover; report it as a website
+problem or a missing design decision.
 
-**Run `discover_controls.mjs`. Click-test every discovered non-link control, on
-every route in the matrix. Do not limit this test to the controls a brief happens
-to name.** A scope limited to a couple of named controls, such as an accordion and
-a mobile nav, leaves everything else untested. It also leaves no record of the
-skip. Real
-examples: a filter, a hover state on an arbitrary link or button, and a nav's
-scroll-hide and scroll-show behavior on a page where you did not re-verify it. If
-time is short, say so explicitly. Log a "Not checked" line for each control on
-each page. Do not write one blanket disclaimer for the whole site. A mechanism
-confirmed on one page is not confirmed on the next page.
+### 6. Write and check the report
 
-Then exercise the real controls: menus, dialogs, accordions, tabs, sliders, focus,
-hover, validation, and result states. A forced visibility can verify the panel
-layout. It cannot verify the interaction that opens the panel. Record these as
-distinct capabilities.
+Follow [report-template.md](references/report-template.md). Save:
 
-Check the widths between the supplied Figma frames for overflow and for reflow.
-Do not invent a design intent for an undocumented intermediate width. Report it as
-a website defect, or as a missing design breakpoint, as appropriate.
+1. paired images and optional difference masks for each width and state;
+2. `report.md`, including Figma problems, build differences, verified matches
+   and missing coverage; and
+3. `figma-parity-manifest.json`, a short index of the run.
+4. `review-attestation.json`, when a human or named automated reviewer has
+   actually judged the saved evidence against an explicit criterion.
 
-**Completion:** the state evidence proves the state's appearance, and, where you
-claim it, proves the transition into that state.
-
-### 7. Run complementary website QA when requested
-
-Invoke `website-qa` independently against the same URLs. Keep the accessibility,
-dead-link, forms, console/network, SEO, and regression findings in their own
-sections. A design parity result does not imply a website quality result. A
-website quality result does not imply parity.
-
-### 8. Write and validate the evidence packet
-
-Follow [report-template.md](references/report-template.md). Produce:
-
-1. timestamped paired images and, optionally, diff masks, for each breakpoint and
-   state;
-2. a `report.md` file with the design-source defects, the parity findings, the
-   documentation drift, the verified matches, and the missing coverage;
-3. a `figma-parity-manifest.json` file that conforms to
-   [parity-manifest.schema.json](references/parity-manifest.schema.json).
-
-Assemble the manifest from the artifacts. Do not assemble it by hand. The
-capabilities derive from what exists, and the capture contract seeds the
-limitations:
+Build and validate the index from the saved files:
 
 ```bash
 node scripts/build_manifest.mjs --run <run-dir> --map figma-map.json \
-  --mode local-parity --label desktop [--findings findings.json]
+  --plan <run-dir>/review-plan.json --mode local-parity --label desktop \
+  [--findings findings.json]
 node scripts/validate_manifest.mjs <run-dir>/figma-parity-manifest.json
 ```
 
-The validator rejects a packet that claims `verified` on a capture whose
-conditions were unknown. It rejects a packet that claims
-`interactionTransitions` under `forge-live-evidence`. It rejects a packet that
-hides a mid-run target change. Before you publish a finding, run the pre-publish
-checklist at the end of [report-template.md](references/report-template.md).
-Every item on that checklist has produced a false High in practice.
+The validator rejects legacy v1–v3 self-certifying manifests by default. Use
+`--allow-legacy` only to inspect or migrate an old packet; it cannot satisfy a
+delivery QA gate.
 
-**Carry a finding sourced from a Figma comment or from client correspondence
-through to the open-items list unconditionally.** Tag it with its own confidence
-level. Do not filter it out during consolidation for lacking a hard node-level
-mismatch. A team can log a soft finding mid-run, then drop it from the final report because
-"it isn't a real defect." This is the single most expensive failure mode in
-consolidation. The client already knows they asked for it. See "Soft findings
-survive consolidation" in [report-template.md](references/report-template.md).
+The generated manifest contains observations only. It must never claim that an
+image was inspected or that it matches. After inspection, create and validate a
+separate artifact-bound attestation:
 
-The packet provider is always `figma-parity`. A Forge artifact referenced by the
-packet keeps `captureProvider: "forge"`. Do not relabel it as a local capture.
+```bash
+node scripts/attest_review.mjs --manifest <run-dir>/figma-parity-manifest.json \
+  --actor-kind automated --actor-id "codex-visual-review" \
+  --criterion "Hero matches node 550:6340 at 393px in the default state" \
+  --verdict match --evidence mobile-01-hero \
+  --out <run-dir>/review-attestation.json
+node scripts/validate_attestation.mjs <run-dir>/review-attestation.json
+```
 
-## Report confidence
+Use the exact probe or agent identity for AI or scripted review. Unsigned human
+identity is not trusted: `human-unverified` may preserve a non-gating review
+record, while `human` is rejected until trusted signing and key ownership are
+configured. Never present automated review as human inspection. Read
+`references/review-attestation.schema.json` when producing or consuming this
+file.
 
-- **verified**: an exact Figma node plus a rendered measurement, or an inspected
-  matching capture;
-- **visual-only**: a visible comparison with no reliable numeric or node
-  isolation;
-- **suspected**: evidence points to a mismatch, but the conditions or the state
-  are incomplete;
-- **not-compared**: the required matrix cell is missing.
+Keep any concern taken from a Figma comment or client message in the open-items
+list, even when it has no exact node-level measurement. Label its confidence
+instead of deleting it.
 
-Rank the severity by user impact and by design-system scope. Do not rank it by raw
-pixel count. A missing control outranks widespread antialiasing noise.
+## Conclusion confidence
+
+- **verified** — a conclusion backed by a valid attestation for exact evidence
+  and an explicit criterion; never a property generated from capture stability;
+- **visual-only** — visible difference without a reliable measurement or exact
+  node;
+- **suspected** — the evidence points to a difference but the conditions are
+  incomplete; and
+- **not-compared** — the required page, width or state is missing.
+
+Rank importance by user impact and how widely the problem appears, not by the
+raw number of changed pixels.
+
+## Done means
+
+- every requested route, width and state was compared or named as missing;
+- `coverage.requested` exactly matches the frozen pre-capture plan;
+- every finding has an exact Figma source or is clearly marked visual-only;
+- every claimed match or mismatch has a valid human or named automated
+  attestation bound to the manifest and reviewed artifact hashes;
+- controls were discovered before being tested;
+- Figma problems, build problems and stale notes are kept separate; and
+- the report and manifest pass their checks.
+
+Read [known-blind-spots-2026-08-07.md](references/known-blind-spots-2026-08-07.md)
+when changing this skill. It records the failures that led to the checks for
+section joins, complete control testing, comments, outside references and
+deleted requirements.

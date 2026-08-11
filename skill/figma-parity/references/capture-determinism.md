@@ -1,5 +1,14 @@
 # Deterministic capture
 
+## In this file
+
+- Content width
+- Detecting a changed target
+- Confirming page scripts ran
+- Waiting for a stable page
+- Scroll reveals, matching conditions and changing content
+- Capture boundaries
+
 A visual comparison is trustworthy only when you control and record the
 capture conditions.
 
@@ -40,7 +49,7 @@ Fingerprint the served document, using a SHA-256 hash, the byte length, and
 `last-modified`, at the start of the run and again at the end. If the two
 fingerprints differ, say so in `limitations`. Decide which state the report
 describes, and re-capture the rest of the run to match it. Under Forge, use
-artifact hashes plus timestamps as the substitute, ideally alongside your own
+file hashes plus timestamps as the substitute, ideally alongside your own
 separate fetch.
 
 Treat these symptoms as suspicion, not as a confirmed defect: a section height

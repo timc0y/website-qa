@@ -1,4 +1,4 @@
 interface:
   display_name: "Figma Parity"
-  short_description: "Compare rendered interfaces with Figma"
-  default_prompt: "Use $figma-parity to compare this implementation with its exact Figma frames and states."
+  short_description: "Check whether a built site matches Figma"
+  default_prompt: "Use $figma-parity to compare the requested pages and states with their exact Figma nodes, then report verified differences and missing comparisons."

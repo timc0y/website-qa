@@ -1,5 +1,14 @@
 # Vision QA — reviewing with your eyes, not just the DOM
 
+## In this file
+
+- What scripts cannot see
+- How tiles and repeated-component sets help
+- Five visual passes
+- Comparing with Figma
+- Screenshot traps and false findings
+- How to write a trustworthy visual finding
+
 Every script in this skill measures. Measurement is precise and blind. It will tell
 you a heading is 62px and never tell you the heading crashes into the face in the
 photo behind it. The defects that arrive from clients are overwhelmingly *visual
@@ -145,10 +154,11 @@ mis-clipped rounded image, a sticky element in the wrong place, a gradient bandi
 nav dropdowns, mobile menu, accordions, tabs. Review them with pass 1's questions.
 These get the least human attention and hold a disproportionate share of defects.
 
-## Vision against a design reference
+## Vision against Figma
 
-When a comparison workflow composes `Design (left) | Live (right)` images per section
-and breakpoint, looking at those pairs is a distinct skill from measuring them:
+This is the other half — see the **figma-parity** skill for the capture pipeline. It
+composes `Figma (left) | Live (right)` images per section per breakpoint. Looking at
+those pairs is a distinct skill from measuring them:
 
 - **Run the numeric spec diff first** (`website-qa --spec=`). Numbers settle padding, type
   and colour before you look at anything. Then your eyes are free for what numbers
@@ -237,8 +247,10 @@ The scripts and your eyes will contradict each other. Some patterns worth knowin
 - **Rule of thumb.** Vision is authoritative on *appearance and presence*; measurement is
   authoritative on *values*; clicking is authoritative on *behaviour*. When a finding
   crosses categories, get it from the right channel rather than the convenient one.
-- **Truncated capture.** `truncatedAt` in the summary means the bottom of the page was
-  never captured. Say so; do not let silence imply "reviewed and clean".
+- **Sampled capture.** `sampledAt` in the summary means the page needed more tiles than
+  the configured cap. The runner spreads captures from the first through the final
+  viewport, so the tail is visible, but gaps remain between samples. Name that partial
+  coverage; do not let representative sampling imply a contiguous review.
 
 ## The discipline that makes vision findings credible
 

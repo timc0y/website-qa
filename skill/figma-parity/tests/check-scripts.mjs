@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -38,7 +39,7 @@ try {
   };
   const manifest = path.join(temp, "figma-parity-manifest.json");
   fs.writeFileSync(manifest, `${JSON.stringify(packet, null, 2)}\n`);
-  const valid = execFileSync("node", [path.join(root, "scripts/validate_manifest.mjs"), manifest], { encoding: "utf8" });
+  const valid = execFileSync("node", [path.join(root, "scripts/validate_manifest.mjs"), "--allow-legacy", manifest], { encoding: "utf8" });
   assert.match(valid, /VALID/);
 
   packet.coverage.compared = [];
@@ -52,7 +53,7 @@ try {
     copy.coverage.compared = [cell];
     mutate(copy);
     fs.writeFileSync(manifest, `${JSON.stringify(copy, null, 2)}\n`);
-    return spawnSync("node", [path.join(root, "scripts/validate_manifest.mjs"), manifest], { encoding: "utf8" });
+    return spawnSync("node", [path.join(root, "scripts/validate_manifest.mjs"), "--allow-legacy", manifest], { encoding: "utf8" });
   };
 
   // schemaVersion 2 is accepted; a newer version warns rather than failing, so a
@@ -119,26 +120,26 @@ try {
   // externalReferences must name a URL, a route and a reason it isn't in Figma.
   assert.match(run((p) => {
     p.schemaVersion = 3;
-    p.externalReferences = [{ url: "https://example.test/services", route: "/single-director", note: "client-cited reference" }];
+    p.externalReferences = [{ url: "https://example.test/services", route: "/service-a", note: "stakeholder-cited reference" }];
   }).stdout, /VALID/);
   assert.match(run((p) => {
     p.schemaVersion = 3;
-    p.externalReferences = [{ route: "/single-director", note: "no url" }];
+    p.externalReferences = [{ route: "/service-a", note: "no url" }];
   }).stderr, /externalReferences\[0\]\.url is required/);
   assert.match(run((p) => {
     p.schemaVersion = 3;
-    p.externalReferences = [{ url: "not-a-url", route: "/single-director", note: "bad url" }];
+    p.externalReferences = [{ url: "not-a-url", route: "/service-a", note: "bad url" }];
   }).stderr, /must be an absolute URL/);
 
   // scheduledForDeletion asserts a CONFIRMED decision; decidedBy/decidedOn are
   // required so a hopeful guess cannot pass as a fact.
   assert.match(run((p) => {
     p.schemaVersion = 3;
-    p.scheduledForDeletion = [{ route: "/team-members/qa-placeholder", why: "placeholder person", decidedBy: "owner", decidedOn: "2026-08-05" }];
+    p.scheduledForDeletion = [{ route: "/team/example", why: "placeholder person", decidedBy: "owner", decidedOn: "2026-08-05" }];
   }).stdout, /VALID/);
   assert.match(run((p) => {
     p.schemaVersion = 3;
-    p.scheduledForDeletion = [{ route: "/team-members/qa-placeholder", why: "placeholder person" }];
+    p.scheduledForDeletion = [{ route: "/team/example", why: "placeholder person" }];
   }).stderr, /scheduledForDeletion\[0\]\.decidedBy is required/);
 
   // compare_images.py refuses what would produce noise instead of evidence.
@@ -201,8 +202,10 @@ try {
   fs.mkdirSync(path.join(bmRun, "review", "t_mobile-393"), { recursive: true });
   for (const p of [
     path.join(bmRun, "live", "01-hero.png"),
+    path.join(bmRun, "live", "full-mobile.png"),
     path.join(bmRun, "figma", "01-hero.png"),
     path.join(bmRun, "review", "t_mobile-393", "01-hero.png"),
+    path.join(bmRun, "review", "t_mobile-393", "index.html"),
   ]) fs.writeFileSync(p, "fixture");
   fs.writeFileSync(path.join(bmRun, "review", "t_mobile-393", "pairs.json"), JSON.stringify({
     pairing: "explicit (figma-map.json section names)", breakpoint: "mobile-393", timestamp: "t", label: "mobile",
@@ -211,53 +214,131 @@ try {
       sideBySide: "01-hero.png", sizes: { figma: [4, 4], live: [4, 4] } }],
   }));
   fs.writeFileSync(path.join(bmRun, "live", "capture-mobile.json"), JSON.stringify({
-    url: "https://example.test/multiple-directors", requestedContentWidth: 393, windowWidth: 408,
+    url: "https://example.test/service-b", requestedContentWidth: 393, windowWidth: 408,
     reservedGutter: 15, contentWidthMatches: true, target: { stable: true }, settle: { settled: true },
-    masks: [], captureProvider: "local", fullPage: true,
+    masks: [], captureProvider: "local", fullPage: "live/full-mobile.png",
     sections: [{ name: "01-hero", figmaNodeId: "550:6340", path: "live/01-hero.png",
       observedContentWidth: 393, settleMethod: "settled", captureProvider: "local", limitations: [] }],
   }));
   const bmMap = path.join(temp, "bm-map.json");
   fs.writeFileSync(bmMap, JSON.stringify({
-    fileKey: "abc", fileUrl: "https://figma.test/x", route: "/multiple-directors",
+    fileKey: "abc", fileUrl: "https://figma.test/x", route: "/service-b",
     sections: [{ name: "01-hero", figmaNodeId: "550:6340", selector: "section.hero" }],
-    components: { registry: { "Hero/Audience": [{ route: "/single-director", breakpoint: 393, figmaNodeId: "550:10472" }] } },
+    reviewPlan: { cells: [
+      { route: "/service-b", breakpoint: 393, state: "default", figmaNodeId: "550:6340", sectionName: "01-hero" },
+      { route: "/service-b", breakpoint: 393, state: "menu open", figmaNodeId: "550:7000", sectionName: "02-nav" },
+      { route: "/service-b", breakpoint: 393, state: "default", figmaNodeId: "100:201", sectionName: "01-hero-reuse" }
+    ] },
+    components: { registry: { "Hero/Service": [{ route: "/service-a", breakpoint: 393, figmaNodeId: "100:201" }] } },
     coverage: {
       missing: [],
       coveredViaComponent: [
-        { state: "default", breakpoint: 393, coveredVia: "/single-director", componentId: "Hero/Audience" },
+        { state: "default", breakpoint: 393, coveredVia: "/service-a", componentId: "Hero/Service" },
         { state: "default", breakpoint: 393, coveredVia: "/nonexistent-route", componentId: "Hero/Audience" },
       ],
     },
-    externalReferences: [{ url: "https://example.test/spark", route: "/single-director", note: "client reference" }],
-    scheduledForDeletion: [{ route: "/team-members/qa-placeholder", why: "placeholder", decidedBy: "owner", decidedOn: "2026-08-05" }],
+    externalReferences: [{ url: "https://example.test/reference", route: "/service-a", note: "stakeholder reference" }],
+    scheduledForDeletion: [{ route: "/team/example", why: "placeholder", decidedBy: "owner", decidedOn: "2026-08-05" }],
   }));
+  const bmPlan = path.join(bmRun, "review-plan.json");
+  const frozen = spawnSync("node", [path.join(root, "scripts/freeze_plan.mjs"),
+    "--map", bmMap, "--route", "/service-b", "--breakpoint", "393", "--out", bmPlan], { encoding: "utf8" });
+  assert.equal(frozen.status, 0, frozen.stderr);
+  const planSha256 = crypto.createHash("sha256").update(fs.readFileSync(bmPlan)).digest("hex");
+  const capturePacket = JSON.parse(fs.readFileSync(path.join(bmRun, "live", "capture-mobile.json"), "utf8"));
+  capturePacket.plan = { path: "review-plan.json", sha256: planSha256 };
+  fs.writeFileSync(path.join(bmRun, "live", "capture-mobile.json"), JSON.stringify(capturePacket));
   const bmOut = path.join(bmRun, "figma-parity-manifest.json");
   const bmResult = spawnSync("node", [path.join(root, "scripts/build_manifest.mjs"),
-    "--run", bmRun, "--map", bmMap, "--mode", "local-parity", "--label", "mobile", "--out", bmOut], { encoding: "utf8" });
+    "--run", bmRun, "--map", bmMap, "--plan", bmPlan, "--mode", "local-parity", "--label", "mobile", "--out", bmOut], { encoding: "utf8" });
   assert.equal(bmResult.status, 0, bmResult.stderr);
-  assert.match(bmResult.stderr, /WARNING: unverifiable coveredViaComponent claim downgraded.*nonexistent-route/);
+  assert.match(bmResult.stderr, /outside the frozen plan and was ignored.*nonexistent-route/);
   const bmManifest = JSON.parse(fs.readFileSync(bmOut, "utf8"));
-  assert.equal(bmManifest.schemaVersion, 3);
+  assert.equal(bmManifest.schemaVersion, 4);
+  assert.equal(Object.hasOwn(bmManifest.evidence[0], "inspected"), false);
+  assert.equal(Object.hasOwn(bmManifest.evidence[0], "confidence"), false);
+  assert.equal(bmManifest.execution.capabilities.visualComparison, false);
+  assert.equal(bmManifest.plan.sha256, planSha256);
+  assert.equal(bmManifest.coverage.requested.length, 3);
+  assert.ok(bmManifest.coverage.missing.some((cell) => cell.state === "menu open" && /no paired capture evidence/.test(cell.reason)));
   assert.equal(bmManifest.coverage.coveredViaComponent.length, 1);
-  assert.equal(bmManifest.coverage.coveredViaComponent[0].componentId, "Hero/Audience");
-  assert.equal(bmManifest.coverage.coveredViaComponent[0].coveredVia, "/single-director");
-  assert.equal(bmManifest.coverage.coveredViaComponent[0].figmaNodeId, "550:10472");
-  assert.ok(bmManifest.coverage.missing.some((m) => /downgraded to missing/.test(m.reason) && /nonexistent-route/.test(m.reason)));
+  assert.equal(bmManifest.coverage.coveredViaComponent[0].componentId, "Hero/Service");
+  assert.equal(bmManifest.coverage.coveredViaComponent[0].coveredVia, "/service-a");
+  assert.equal(bmManifest.coverage.coveredViaComponent[0].figmaNodeId, "100:201");
+  assert.ok(bmManifest.coverage.missing.some((cell) => cell.figmaNodeId === "100:201" && /does not satisfy coverage/.test(cell.reason)));
+  assert.ok(!bmManifest.coverage.missing.some((m) => /nonexistent-route/.test(m.reason)));
   assert.equal(bmManifest.externalReferences.length, 1);
   assert.equal(bmManifest.scheduledForDeletion.length, 1);
   const bmValid = spawnSync("node", [path.join(root, "scripts/validate_manifest.mjs"), bmOut], { encoding: "utf8" });
   assert.equal(bmValid.status, 0, bmValid.stderr);
   assert.match(bmValid.stdout, /VALID/);
   assert.match(bmValid.stdout, /covered via a component/);
+  const selfCertified = structuredClone(bmManifest);
+  selfCertified.evidence[0].inspected = true;
+  selfCertified.evidence[0].confidence = "verified";
+  selfCertified.execution.capabilities.visualComparison = true;
+  const selfCertifiedFile = path.join(bmRun, "self-certified-manifest.json");
+  fs.writeFileSync(selfCertifiedFile, `${JSON.stringify(selfCertified, null, 2)}\n`);
+  const rejectedSelfCertification = spawnSync("node", [path.join(root, "scripts/validate_manifest.mjs"), selfCertifiedFile], { encoding: "utf8" });
+  assert.equal(rejectedSelfCertification.status, 1);
+  assert.match(rejectedSelfCertification.stderr, /must not appear in an observation manifest/);
+  assert.match(rejectedSelfCertification.stderr, /visualComparison cannot be true/);
+
+  // Review verdicts live in a separate artifact-bound attestation. The actor is
+  // explicit, and changing the observed manifest invalidates the attestation.
+  const attestation = path.join(bmRun, "review-attestation.json");
+  const attested = spawnSync("node", [path.join(root, "scripts/attest_review.mjs"),
+    "--manifest", bmOut, "--actor-kind", "automated", "--actor-id", "codex-reviewer",
+    "--criterion", "Hero matches the mapped Figma node at 393px", "--verdict", "match",
+    "--evidence", "mobile-01-hero", "--out", attestation], { encoding: "utf8" });
+  assert.equal(attested.status, 0, attested.stderr);
+  const attestationPacket = JSON.parse(fs.readFileSync(attestation, "utf8"));
+  assert.equal(attestationPacket.actor.kind, "automated");
+  assert.equal(attestationPacket.attestations[0].evidenceIds[0], "mobile-01-hero");
+  assert.deepEqual(attestationPacket.attestations[0].scope, {
+    routes: ["/service-b"], breakpoints: [393], states: ["default"], nodeIds: ["550:6340"]
+  });
+  assert.ok(attestationPacket.artifacts.every((artifact) => /^[a-f0-9]{64}$/.test(artifact.sha256)));
+  const attestationValid = spawnSync("node", [path.join(root, "scripts/validate_attestation.mjs"), attestation], { encoding: "utf8" });
+  assert.equal(attestationValid.status, 0, attestationValid.stderr);
+  assert.match(attestationValid.stdout, /VALID/);
+
+  const forgedHuman = spawnSync("node", [path.join(root, "scripts/attest_review.mjs"),
+    "--manifest", bmOut, "--actor-kind", "human", "--actor-id", "Someone",
+    "--criterion", "Hero matches", "--verdict", "match", "--evidence", "mobile-01-hero",
+    "--out", path.join(bmRun, "forged-human.json")], { encoding: "utf8" });
+  assert.equal(forgedHuman.status, 1);
+  assert.match(forgedHuman.stderr, /unsigned human identity is not trusted/);
+
+  const unrelatedArtifacts = structuredClone(attestationPacket);
+  unrelatedArtifacts.artifacts.pop();
+  fs.writeFileSync(attestation, `${JSON.stringify(unrelatedArtifacts, null, 2)}\n`);
+  const artifactMismatch = spawnSync("node", [path.join(root, "scripts/validate_attestation.mjs"), attestation], { encoding: "utf8" });
+  assert.equal(artifactMismatch.status, 1);
+  assert.match(artifactMismatch.stderr, /artifacts do not exactly match/);
+  fs.writeFileSync(attestation, `${JSON.stringify(attestationPacket, null, 2)}\n`);
+
+  fs.appendFileSync(bmOut, "\n");
+  const staleAttestation = spawnSync("node", [path.join(root, "scripts/validate_attestation.mjs"), attestation], { encoding: "utf8" });
+  assert.equal(staleAttestation.status, 1);
+  assert.match(staleAttestation.stderr, /manifest hash does not match/);
+
+  // Editing the map after the plan is frozen cannot silently change scope.
+  const changedMap = JSON.parse(fs.readFileSync(bmMap, "utf8"));
+  changedMap.reviewPlan.cells.pop();
+  fs.writeFileSync(bmMap, JSON.stringify(changedMap));
+  const changedScope = spawnSync("node", [path.join(root, "scripts/build_manifest.mjs"),
+    "--run", bmRun, "--map", bmMap, "--plan", bmPlan, "--mode", "local-parity", "--label", "mobile", "--out", bmOut], { encoding: "utf8" });
+  assert.equal(changedScope.status, 1);
+  assert.match(changedScope.stderr, /map changed after the review plan was frozen/);
 
   // The harnesses must at least be syntactically loadable.
-  for (const script of ["capture.mjs", "discover_controls.mjs", "build_manifest.mjs"]) {
+  for (const script of ["capture.mjs", "discover_controls.mjs", "freeze_plan.mjs", "build_manifest.mjs", "attest_review.mjs", "validate_attestation.mjs"]) {
     const check = spawnSync("node", ["--check", path.join(root, "scripts", script)], { encoding: "utf8" });
     assert.equal(check.status, 0, `${script} failed --check: ${check.stderr}`);
   }
 
-  console.log("figma-parity scripts: 51/51 checks passed");
+  console.log("figma-parity scripts: attestation and capture-contract checks passed");
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }

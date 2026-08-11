@@ -1,17 +1,22 @@
 {
-  "name": "website-qa-skill",
+  "name": "website-quality-skills",
   "version": "1.0.0",
   "private": true,
-  "description": "Evidence-led website QA skill and Playwright runner",
+  "description": "Independent website QA and Figma parity skills",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "check:disclosure": "node scripts/check-disclosure.mjs",
+    "check:contracts": "node scripts/check-contracts.mjs",
+    "check:skill-docs": "node scripts/check-skill-docs.mjs",
+    "check:skills": "node scripts/sync-skills.mjs --check",
+    "sync:skills": "node scripts/sync-skills.mjs",
     "test:regress": "node skill/website-qa/tests/check-regress.mjs",
     "test:crosspage": "node skill/website-qa/tests/check-crosspage.mjs",
     "test:cascade": "node skill/website-qa/tests/check-cascade.mjs",
     "test:detectors": "node skill/website-qa/tests/check-fixtures.mjs",
-    "test": "npm run check:disclosure && npm run test:regress && npm run test:crosspage && npm run test:cascade && npm run test:detectors"
+    "test:figma-parity": "node skill/figma-parity/tests/check-scripts.mjs",
+    "test": "npm run check:disclosure && npm run check:skill-docs && npm run check:contracts && npm run test:regress && npm run test:crosspage && npm run test:cascade && npm run test:detectors && npm run test:figma-parity"
   },
   "dependencies": {
     "playwright": "1.62.1"

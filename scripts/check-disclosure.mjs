@@ -24,6 +24,14 @@ const restrictedIdentifiers = [
   'c2l0ZWNoZWNr',
   'd2YtcWEtZmlnbWE=',
   'Z2l0aHViLmNvbS90aW1jMHkvd2ViZmxvdw==',
+  'ZXhlY3V0aXZlIGxpZmU=',
+  'ZXhlYyBsaWZl',
+  'c3BhcmthZHZpc29ycw==',
+  'c2luZ2xlLWRpcmVjdG9y',
+  'bXVsdGlwbGUtZGlyZWN0b3Jz',
+  'cmVsZXZhbnQtbGlmZS1pbnN1cmFuY2U=',
+  'dGVhbS1tZW1iZXJzL3FhLXBsYWNlaG9sZGVy',
+  'cmlXVlRKQWpRYU5FNXJPOEJvdzV4ZA==',
 ].map((value) => Buffer.from(value, 'base64').toString('utf8').toLowerCase());
 
 const absolutePathPatterns = [
@@ -32,6 +40,42 @@ const absolutePathPatterns = [
   /[A-Za-z]:\\Users\\/i,
 ];
 const opaqueIdPattern = /\b[0-9a-f]{24}\b/i;
+const populatedFigmaUrlPattern = /https:\/\/(?:www\.)?figma\.com\/design\/(?![<:]|example(?:[-_]))[A-Za-z0-9_-]{8,}\//i;
+const allowedExternalDomains = new Set([
+  '127.0.0.1',
+  'localhost',
+  'cdn.example.test',
+  'dev.w3.org',
+  'developer.chrome.com',
+  'developer.mozilla.org',
+  'developers.google.com',
+  'developers.webflow.com',
+  'docs.astro.build',
+  'example.com',
+  'example.test',
+  'figma.test',
+  'github.com',
+  'help.webflow.com',
+  'json-schema.org',
+  'playwright.dev',
+  'reference.example',
+  'registry.npmjs.org',
+  's.com',
+  'site.com',
+  'site.test',
+  'skills.local',
+  'stylelint.io',
+  'tracker.test',
+  'university.webflow.com',
+  'www.browserstack.com',
+  'www.edps.europa.eu',
+  'www.figma.com',
+  'www.rfc-editor.org',
+  'www.s.com',
+  'www.sitemaps.org',
+  'www.w3.org',
+  'www.zaproxy.org',
+]);
 const markdownLinkPattern = /\[[^\]]*\]\(([^)]+)\)/g;
 const failures = [];
 
@@ -62,6 +106,15 @@ async function walk(directory) {
       if (pattern.test(content)) failures.push(`${relative}: contains an absolute user path`);
     }
     if (opaqueIdPattern.test(content)) failures.push(`${relative}: contains a 24-character opaque identifier`);
+    if (populatedFigmaUrlPattern.test(content)) {
+      failures.push(`${relative}: contains a populated Figma design URL; use a placeholder in the public package`);
+    }
+    for (const match of content.matchAll(/\bhttps?:\/\/([A-Za-z0-9.-]+)/gi)) {
+      const domain = match[1].toLowerCase();
+      if (!allowedExternalDomains.has(domain)) {
+        failures.push(`${relative}: contains an unreviewed external domain (${domain})`);
+      }
+    }
 
     if (path.extname(entry.name).toLowerCase() === '.md') {
       for (const match of content.matchAll(markdownLinkPattern)) {

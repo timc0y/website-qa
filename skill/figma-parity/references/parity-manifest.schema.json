@@ -7,12 +7,23 @@
   "required": ["schemaVersion", "provider", "generatedAt", "targetUrl", "source", "execution", "coverage", "evidence", "limitations"],
   "properties": {
     "schemaVersion": {
-      "enum": [1, 2, 3],
-      "description": "2 adds findings/designSourceDefects/docDrift, joint finding ownership, target fingerprints and the capture-contract fields on evidence.live. 3 adds coverage.coveredViaComponent (a missing breakpoint resolved against the project map's component registry instead of reported as a flat gap), plus top-level externalReferences and scheduledForDeletion. All additions are additive: an older reader can ignore them, so consumers such as Parallax keep working."
+      "enum": [1, 2, 3, 4],
+      "description": "4 makes the manifest observation-only. Generated evidence no longer carries inspected or confidence conclusions; those belong in a separate hash-bound review attestation."
     },
     "provider": { "const": "figma-parity" },
     "generatedAt": { "type": "string", "format": "date-time" },
     "targetUrl": { "type": "string", "format": "uri" },
+    "plan": {
+      "type": "object",
+      "description": "Required by schemaVersion 4. Binds coverage.requested to a pre-capture frozen review plan.",
+      "required": ["path", "sha256", "mapSha256", "frozenAt"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "mapSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "frozenAt": { "type": "string", "format": "date-time" }
+      }
+    },
     "source": {
       "type": "object",
       "required": ["kind", "fileKey"],
@@ -69,7 +80,7 @@
         },
         "coveredViaComponent": {
           "type": "array",
-          "description": "schemaVersion 3+. A cell not itself captured, resolved instead against another route's instance of the same component in the project map's components registry. build_manifest.mjs only emits an entry here when the registry actually backs the claim; an unbacked claim is downgraded into `missing` instead. See references/project-map.md.",
+          "description": "Component-reuse annotation. In schemaVersion 4 it cannot satisfy a requested cell: context can differ, so the cell remains missing until this exact route/state has evidence.",
           "items": {
             "allOf": [
               { "$ref": "#/$defs/cell" },
@@ -90,7 +101,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "route", "breakpoint", "state", "figma", "live", "comparison", "inspected", "confidence"],
+        "required": ["id", "route", "breakpoint", "state", "figma", "live", "comparison"],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
           "route": { "type": "string", "minLength": 1 },
@@ -134,8 +145,8 @@
               "metricsPath": { "type": "string", "minLength": 1 }
             }
           },
-          "inspected": { "type": "boolean" },
-          "confidence": { "enum": ["verified", "visual-only", "suspected"] },
+          "inspected": { "type": "boolean", "deprecated": true, "description": "Legacy schemaVersion 1-3 only. Version 4 stores review attestations separately." },
+          "confidence": { "enum": ["verified", "visual-only", "suspected"], "deprecated": true, "description": "Legacy schemaVersion 1-3 only. Version 4 observation manifests cannot claim a conclusion." },
           "limitations": { "type": "array", "items": { "type": "string" } }
         }
       }
@@ -209,7 +220,7 @@
         "live": { "type": "string" },
         "figmaNodeId": { "type": "string" },
         "severity": { "enum": ["high", "medium", "low", "motion"] },
-        "confidence": { "enum": ["verified", "visual-only", "suspected", "not-compared"] },
+        "confidence": { "enum": ["verified", "visual-only", "suspected", "not-compared"], "deprecated": true, "description": "Legacy schemaVersion 1-3 only. Version 4 conclusions require a separate review attestation." },
         "owner": {
           "description": "`both` is legitimate: when the Figma source is internally inconsistent, a finding can require a design decision AND a build change. Do not force it into one bucket.",
           "enum": ["build", "design", "both", "content"]

@@ -144,8 +144,10 @@ const ONCE_COUNTS = {
   'a11y.unlabeledFields':     e => len(e.once?.a11y_seo?.accessibility?.unlabeledFormFields),
   'a11y.brokenAriaRefs':      e => len(e.once?.a11y_seo?.accessibility?.brokenAriaRefs),
   'render.webFontsNotLoaded': e => len(e.once?.a11y_seo?.rendering?.webFontsNotLoaded),
-  'console.errors':           e => len(e.console?.errors) + len(e.console?.pageErrors),
-  'network.badResponses':     e => len(e.network?.badResponses),
+  'console.errors':           e => e.console?.errorSummary
+    ? e.console.errorSummary.firstPartyUnique + (e.console.pageErrorSummary?.firstPartyUnique ?? len(e.console?.pageErrors))
+    : len(e.console?.errors) + len(e.console?.pageErrors),
+  'network.badResponses':     e => (e.network?.badResponses || []).filter(item => !item.thirdParty).length,
   /* Phase-gated metrics return null — not 0 — when the phase did not run. `--no-links`
    * on one of the two runs would otherwise drop every broken link to zero and report
    * the lot as fixed, which is precisely the kind of confident-and-wrong output this
@@ -174,10 +176,16 @@ const ONCE_VALUES = {
  * "it ran and found nothing"; only the latter may be diffed. */
 const ONCE_ITEMS = {
   'links.broken':            e => (e.links && !e.links.error ? idsOf(e.links.broken) : null),
-  'console.errors':          e => (e.console ? [...idsOf(e.console.errors), ...idsOf(e.console.pageErrors)] : null),
+  'console.errors':          e => (e.console
+    ? [...idsOf(e.console.errorSummary
+        ? e.console.errorSummary.groups.filter(group => !group.thirdParty)
+        : e.console.errors), ...idsOf(e.console.pageErrorSummary
+          ? e.console.pageErrorSummary.groups.filter(group => !group.thirdParty)
+          : e.console.pageErrors)]
+    : null),
   'content.placeholderText': e => (e.once?.content && !e.once.content.error ? idsOf(e.once.content.placeholderText) : null),
   'content.deadLinks':       e => (e.once?.content && !e.once.content.error ? idsOf(e.once.content.deadLinks) : null),
-  'network.badResponses':    e => (e.network ? idsOf(e.network.badResponses) : null)
+  'network.badResponses':    e => (e.network ? idsOf(e.network.badResponses.filter(item => !item.thirdParty)) : null)
 };
 
 /* Per-heading rendered size, keyed by tag+text+breakpoint. This is what turns "the

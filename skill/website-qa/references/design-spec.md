@@ -1,58 +1,76 @@
-# The design spec — one artefact, written once, used twice
+# The design spec: one file for the build and the review
 
-A **design spec** is a small JSON file recording what a page's sections were *supposed*
-to be, in numbers, extracted from the design source before anything is built.
+## In this file
+
+- Why the build and review share one file
+- The rule for taking values from Figma
+- JSON format and examples
+- How text matching works
+- How to derive values and choose tolerances
+- What the file should not contain
+
+A **design spec** is a small JSON file. It records what a page's sections were
+*supposed* to be, in numbers, extracted from the design source before anything
+is built.
 
 It has exactly two jobs:
 
-1. **Producer side** — force the intent to be read off the design source as values rather
-   than absorbed from a picture of it. Extracting `32px` is a different act from looking at
-   a heading and reaching for the nearest existing scale step.
-2. **Consumer side** — turn verification from a fresh interpretation of the design into a
-   **diff against the thing that was built to**. Without a spec, an audit can only ask "is
-   this page self-consistent?"; with one it can say which value was intended.
+1. **Before building**: make a person read the design source as exact values
+   as values, not to absorb it from a picture of the source. Extracting `32px`
+   is a different act from looking at a heading and reaching for the nearest
+   existing scale step.
+2. **During review**: compare the finished page with the same agreed values.
+   Without a spec,
+   an audit can only ask "is this page self-consistent?" With a spec, it can
+   say which value the team intended.
 
 The measured difference reads like this:
 
-> **without** — "container gutters at 1512px: dominant 54px, also 47px, 102px, 133px"
-> **with** — "every section is 16px too wide — content starts at 54px, the design says 70px"
+> **Without a spec:** "container gutters at 1512px: dominant 54px, also 47px,
+> 102px, 133px"
+> **With a spec:** "every section is 16px too wide; content starts at 54px, and
+> the design says 70px"
 
-The first is an observation. The second is a ticket.
+The first line is an observation. The second line is a ticket.
 
-## Why the file, and not a direct reference
+## Why use the file, and not a direct reference
 
-Because both sides otherwise read the design source independently and disagree, and
-because the two sides must remain usable alone. A file crossing between them means:
+Both sides can read the design source independently, and then disagree. A file
+that crosses between them fixes this problem:
 
 - neither side imports, invokes, or names the other;
 - the numbers are reviewable in a diff, and a designer can correct them;
-- it is a durable artefact — commit it next to the site and every later run compares
-  against the same baseline;
-- a team with no design file at all can still write one by hand from a written standard
-  ("all sections use a 70px gutter, headings are DM Serif Text").
+- the file is a lasting record. Save it next to the site so every later run
+  compares against the same agreed values;
+- a team with no design file at all can still write one by hand, from a
+  written standard such as "all sections use a 70px gutter; headings use DM
+  Serif Text."
 
-Nothing here is coupled to a particular design tool. `source` is provenance only.
+The format works with any design tool. The `source` field simply records where
+the values came from.
 
-## The one rule that makes it worth writing
+## The one rule that makes this file worth writing
 
-**Every value comes from a specific node in the design source, never from a global token
-and never from memory.** Design files reuse many near-identical type and colour tokens — a
-62px *and* a 72px display serif; a 12px *and* a 14px uppercase eyebrow. A value copied
-from the wrong token produces a spec that is confidently wrong, which is worse than no
-spec, because the consumer will now report the correct build as broken.
+**Take every value from a specific node in the design source. Never take a
+value from a global token, and never take one from memory.** A design file
+reuses many near-identical type and color tokens: a 62px *and* a 72px display
+serif; a 12px *and* a 14px uppercase eyebrow. A value copied from the wrong
+token produces a spec that is confidently wrong. This is worse than no spec,
+because the reviewer will then report a correct build as broken.
 
-Recalling that "the medium title is 54px" is a guess that silently forks the design system
-when it is wrong.
+Recalling that "the medium title is 54px" is a guess. A wrong guess silently
+forks the design system.
 
-## Schema
+## File format
 
-Only `text` (or a section's `anchorText`) is required. Everything else is optional, so a
-spec can start as three lines and grow. Consumers ignore keys they don't understand.
+Only `text`, or a section's `anchorText`, is required. Every other field is
+optional, so a spec can start as three lines and grow. A reader ignores a key
+it does not understand.
 
 ```jsonc
 {
   "name": "Marketing site — About",
-  "source": {                      // provenance only; no consumer fetches this
+  "source": {                      // records where the values came from
     "kind": "figma",
     "fileKey": "…",
     "frames": { "desktop": "550:6890", "mobile": "550:11122" }
@@ -101,6 +119,16 @@ spec can start as three lines and grow. Consumers ignore keys they don't underst
       "long":  "wraps to 2 lines; siblings must top-align, not centre" }
   ],
 
+  "behaviors": [
+    // Record outcomes, not implementation guesses. These are shared acceptance
+    // criteria for the build and the review at desktop, mobile and fallback states.
+    { "name": "results reveal", "trigger": "results enter the viewport",
+      "desktop": "cards reveal once in reading order",
+      "mobile": "same order; no horizontal overflow",
+      "reducedMotion": "results are immediately visible",
+      "noJavaScript": "results remain readable" }
+  ],
+
   "decisions": [
     // Every place the design and the existing system disagree. One line each, resolved
     // by a human at scope time — not silently, mid-build.
@@ -117,7 +145,7 @@ spec can start as three lines and grow. Consumers ignore keys they don't underst
   ],
 
   "handoffs": [
-    // Steps the producer cannot perform and a human must. Listed ONCE, up front.
+    // Steps the builder cannot perform and a human must. Listed ONCE, up front.
     { "what": "rich-text field content on a new component", "why": "not settable through the available API" }
   ]
 }
@@ -125,64 +153,75 @@ spec can start as three lines and grow. Consumers ignore keys they don't underst
 
 ### `reuse` on a section
 
-`new` | `reused` | `adapted`. It exists because reuse fails differently from building:
-dropping an existing component into a new context inherits geometry correctly and still
-breaks, because the context differs — longer copy, a different background, a narrower
-container. A section marked `reused` is a prompt to record **what is different here**, not
-a promise that nothing needs checking.
+Use `new`, `reused`, or `adapted`. This field exists because reuse fails
+differently from a fresh build. Dropping an existing component into a new
+context inherits the geometry correctly, and still breaks, because the context
+differs: the copy is longer, the background is different, or the container is
+narrower. A section marked `reused` is a prompt to record **what is different
+here**. It is not a promise that nothing needs a check.
 
 ### Matching: by text, never by selector
 
-Class names churn between design and build and mean nothing across the boundary. The
-**words on the page** are the one identifier both sides share, so a consumer matches on
-normalised rendered text (lowercased, whitespace collapsed, punctuation stripped).
+A class name churns between the design and the build, and it means nothing
+across that boundary. The **words on the page** are the one identifier both
+sides share, so the QA runner matches on the normalised rendered text: lowercased,
+with the whitespace collapsed and the punctuation stripped.
 
-Two refinements that each took a real run to discover:
+Two refinements, and each one cost a real run to discover:
 
-- **Page chrome is excluded by default.** A mega-menu repeats most of a site's copy as
-  short link labels, and those labels are *shorter* than the real headings — so
-  "smallest match wins" resolves a section heading to a 16px nav link and then reports the
-  real heading as far too small. Nav, header, footer and dropdowns are skipped unless an
+- **Page chrome is excluded by default.** A mega-menu repeats most of a site's
+  copy as short link labels, and those labels are *shorter* than the real
+  headings. So a "smallest match wins" rule resolves a section heading to a
+  16px nav link, and then reports the real heading as far too small. The
+  matcher skips the nav, the header, the footer, and a dropdown, unless an
   entry sets `scope`.
-- **Leaf elements win.** The element whose *own* text nodes carry the copy holds the type
-  styles; a wrapper reports the inherited body font.
+- **A leaf element wins.** The element whose *own* text nodes carry the copy
+  holds the type styles. A wrapper element reports the inherited body font
+  instead.
 
-An entry that cannot be matched is reported as unmatched — meaning the copy changed or the
-section is missing. That is information, not automatically a defect.
+The matcher reports an entry it cannot match as unmatched. This means the copy
+changed, or the section is missing. This report is information. It is not
+automatically a defect.
 
 ## Deriving the values
 
-Whatever the design tool, pull the frame at the **section-frame level** — deep enough for
-each section's position, size and internal padding, shallow enough to stay readable.
+Whatever the design tool, pull the frame at the **section-frame level**: deep
+enough to capture each section's position, size, and internal padding, and
+shallow enough to stay readable.
 
-- **`container.left`** — the modal x of text content across section frames. Take the
-  majority and record deliberate exceptions as that section's `contentLeft` rather than
-  letting a deliberately-inset hero skew the container value.
-- **`sections[]`** — each section's height, plus a distinctive line of copy from inside it
-  as `anchorText`. Anchor on text, not order, so adding a section doesn't shift every
-  later comparison.
-- **`text[]`** — each text node's string plus its *resolved* type style. Tools commonly
-  deduplicate styles into shared references; resolve the reference before writing the
-  value down.
+- **`container.left`**: the modal x-position of the text content across the
+  section frames. Take the majority value, and record a deliberate exception
+  as that section's `contentLeft`. Do not let one deliberately-inset hero skew
+  the container value.
+- **`sections[]`**: each section's height, plus a distinctive line of copy
+  from inside it, as `anchorText`. Anchor on the text, not on the order, so
+  adding a section does not shift every later comparison.
+- **`text[]`**: each text node's string, plus its *resolved* type style. A
+  tool commonly deduplicates styles into shared references. Resolve the
+  reference before you write down the value.
 
-Units map directly: a line height of `"1.2em"` → `1.2`, `"16px"` → `16`; letter spacing
-`"-0.02em"` → `-0.02`.
+Units map directly: a line height of `"1.2em"` becomes `1.2`. A size of
+`"16px"` becomes `16`. A letter spacing of `"-0.02em"` becomes `-0.02`.
 
-**Keep scaffolding out.** Real files contain cursor mockups, redline annotations, SEO
-notes and browser-chrome frames. They have positions and text styles and will happily
-become spec entries that can never match anything.
+**Keep the scaffolding out.** A real file contains a cursor mockup, a redline
+annotation, an SEO note, and a browser-chrome frame. Each of these has a
+position and a text style, and each will happily become a spec entry that can
+never match anything.
 
-## Tolerances, and resisting the urge to tighten them
+## Tolerances, and why not to tighten them
 
-Defaults are 4px position, 2px size, 0.6px font-size, 1.5px line-height. They exist
-because browsers round sub-pixels, fonts differ in metrics from a design tool's renderer,
-and a 1px delta is not a defect anyone will ever fix. Tightening them produces a report
-nobody reads, which costs more than the findings are worth. If a category is noisy, raise
-its tolerance rather than deleting the check.
+The defaults are 4px for position, 2px for size, 0.6px for font size, and
+1.5px for line height. These defaults exist because a browser rounds
+sub-pixels, a font differs in its metrics from a design tool's renderer, and a
+1px delta is not a defect anyone will ever fix. Tightening these values
+produces a report nobody reads, which costs more than the findings are worth.
+If one category is noisy, raise its tolerance. Do not delete the check.
 
 ## What a spec is not
 
-It is not a substitute for looking. It holds numbers, and the defects that hurt most are
-not numeric: an image cropped through someone's chin, a heading colliding with the face
-behind it, one card in a row visibly heavier than the others, a section that simply reads
-as unfinished. A spec makes the measurable part cheap so attention is free for the rest.
+A spec is not a substitute for looking at the page. It holds numbers, and the
+defects that hurt the most are not numeric: an image cropped through someone's
+chin, a heading colliding with the face behind it, one card in a row that
+visibly outweighs the others, a section that simply reads as unfinished. A
+spec makes the measurable part cheap, so you can spend your attention on the
+rest.

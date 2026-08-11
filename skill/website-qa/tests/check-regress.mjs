@@ -41,7 +41,7 @@ const mk = (over = {}) => {
     once: {
       content: { placeholderText: [], defaultRichText: [], deadLinks: [], stagingLinks: [], emptyHeadings: [] },
       a11y_seo: {
-        seo: { title: 'Relevant Life Insurance — Exec Life', metaDescription: 'A real description here.',
+        seo: { title: 'Example Service — Example Co', metaDescription: 'A real description here.',
                canonical: 'https://site.com/', og: { image: 'present' }, favicon: true },
         accessibility: { imagesMissingAlt: [], duplicateIds: [], unlabeledFormFields: [], brokenAriaRefs: [] },
         rendering: { webFontsNotLoaded: [] }

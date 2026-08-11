@@ -1,4 +1,4 @@
 interface:
   display_name: "Website QA"
-  short_description: "Audit any website across browsers and breakpoints"
-  default_prompt: "Use $website-qa to audit this website and produce a verified, severity-ranked QA report."
+  short_description: "Check a website and verify the problems found"
+  default_prompt: "Use $website-qa to check the requested pages, inspect the screenshots, verify important findings, and report what was and was not covered."

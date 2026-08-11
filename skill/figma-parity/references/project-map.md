@@ -1,15 +1,23 @@
 # The project Figma map
 
-A repository built from Figma usually already knows the answers this skill spends
-its first phase rediscovering. It knows which Figma node became which live
-section. It knows the breakpoint mapping. It knows which mismatches are
+## In this file
+
+- Why a project map matters
+- How much of the component list to build
+- The `figma-map.json` format
+- Dates, pages marked for deletion and stale notes
+- What should stay out of the map
+
+A repository built from Figma often already records which Figma node became each
+live section, which frame width matches each website width and which differences are
 already-known decisions, not new defects.
 
-**Look for that map before you scope the matrix.** Check typical locations:
+**Look for that map before listing the comparisons.** Check typical locations:
 `FIGMA.md`, `docs/figma.md`, `design/README.md`, or a `figma-map.json` beside
-them. If one exists, seed the comparison matrix from it. If none exists, write
-one as a by-product of the run. The next review then starts where this one
-finished.
+them. If one exists, start the comparison list from it. If none exists, write
+one in an approved private project location, or keep it run-local when the
+repository is public. Never copy a populated client map into this public skill
+repository.
 
 ## Why it matters
 
@@ -29,57 +37,55 @@ supplies:
   here so the next run does not lose it.
 - **Pages scheduled for deletion.** State this fact here, so a review does not
   spend time on a page nobody intends to fix.
-- **A component registry across every route.** The same component often appears
-  on several routes, and each route can carry a different subset of
-  breakpoints. Build this registry once per project, and use it to answer "does
-  a mobile design exist for this component anywhere," not only "does a mobile
-  design exist for this route."
+- **A component registry matched to review scope.** The same component often
+  appears on several routes, and each route can carry a different subset of
+  breakpoints. A site-wide review needs the relevant project registry; a
+  one-component review begins with that component and expands only to resolve
+  reused states or breakpoints.
 
-## Build the component registry once per project
+## List only the components needed for the review
 
-Scan every Figma page in the file, not only the frame for the route in front of
-you. List every named component and every component instance on each page. For
-each instance, record its route, its section name, its breakpoint, and its
-node ID. Store the result in the map's `components` field. Do this scan once
-per project, before you scope any single route. A component crawl repeated per
-route wastes work and drifts as the file changes.
+For a site-wide or multi-route review, scan the relevant Figma pages once and
+record each named component instance's route, section, breakpoint, and node ID.
+For a single route/component review, register the requested component and known
+reuses first; expand the scan only when another instance may supply a missing
+state or breakpoint. Store the result and its declared scope in `components`.
 
-The registry pays for itself at the exact moment a route is missing a
-breakpoint. If `/single-director` has a mobile frame for `Hero/Audience` and
-`/multiple-directors` does not, the registry lets you report
-"`Hero/Audience` has a verified mobile design, carried on `/single-director`,"
-instead of a flat "no mobile frame for this route." Only report a real gap when
-no route anywhere carries the component at the breakpoint you need.
+The registry explains reuse but does not prove contextual equivalence. If
+`/service-a` has a mobile frame for `Hero/Service` and `/service-b` does not,
+record that relationship as an annotation. Keep `/service-b` missing until its
+exact route, content, container, theme and state have evidence. Shared component
+identity must never remove a cell from the denominator.
 
 ## `figma-map.json`
 
-Make the map machine-readable, so both the human reader and the run consume one
-source of truth. Section order follows document order, top to bottom.
+Use JSON so both a person and the scripts read the same file. Section order
+follows the page from top to bottom.
 
 ```json
 {
-  "fileKey": "riWVTJAjQaNE5rO8Bow5xd",
+  "fileKey": "example-file-key",
   "fileUrl": "https://www.figma.com/design/<key>/<name>",
 
   "components": {
-    "$comment": "built once per project by a full page scan, not once per route. breakpoint is the same numeric CSS/frame width used everywhere else in this map (see routes[].breakpoints), never a label like 'desktop' or 'mobile' — the manifest's coverage cells key on that number.",
-    "verified": "2026-08-07",
+    "$comment": "covers the declared review scope. breakpoint is the same numeric CSS/frame width used everywhere else in this map (see routes[].breakpoints), never a label like 'desktop' or 'mobile' — the manifest coverage cells key on that number.",
+    "verified": "YYYY-MM-DD",
     "registry": {
-      "Hero/Audience": [
-        { "route": "/single-director", "section": "01-hero", "breakpoint": 1512,
-          "figmaNodeId": "550:6340", "verified": "2026-08-03" },
-        { "route": "/single-director", "section": "01-hero", "breakpoint": 393,
-          "figmaNodeId": "550:10472", "verified": "2026-08-04" },
-        { "route": "/multiple-directors", "section": "01-hero", "breakpoint": 1512,
-          "figmaNodeId": "550:6890", "verified": "2026-08-04" }
+      "Hero/Service": [
+        { "route": "/service-a", "section": "01-hero", "breakpoint": 1512,
+          "figmaNodeId": "100:200", "verified": "YYYY-MM-DD" },
+        { "route": "/service-a", "section": "01-hero", "breakpoint": 393,
+          "figmaNodeId": "100:201", "verified": "YYYY-MM-DD" },
+        { "route": "/service-b", "section": "01-hero", "breakpoint": 1512,
+          "figmaNodeId": "100:202", "verified": "YYYY-MM-DD" }
       ]
     }
   },
 
   "routes": [
     {
-      "route": "/multiple-directors",
-      "frame": { "nodeId": "550:6339", "name": "Audience Template", "width": 1512, "height": 8122 },
+      "route": "/service-b",
+      "frame": { "nodeId": "100:199", "name": "Service template", "width": 1512, "height": 8122 },
       "breakpoints": [
         { "css": 1512, "figmaFrameWidth": 1512, "webflow": "main", "note": "authored" },
         { "css": 991,  "figmaFrameWidth": null, "webflow": "medium", "note": "no frame, hand-authored" }
@@ -87,11 +93,11 @@ source of truth. Section order follows document order, top to bottom.
       "sections": [
         {
           "name": "01-hero",
-          "figmaNodeId": "550:6340",
-          "selector": "section.hero-about",
-          "componentId": "Hero/Audience",
-          "verified": "2026-08-03",
-          "notes": "component variant=audience"
+          "figmaNodeId": "100:200",
+          "selector": "section.service-hero",
+          "componentId": "Hero/Service",
+          "verified": "YYYY-MM-DD",
+          "notes": "component variant=service"
         }
       ]
     }
@@ -99,37 +105,46 @@ source of truth. Section order follows document order, top to bottom.
 
   "coverage": {
     "missing": [
-      { "figmaNodeId": "550:6423", "state": "nav dropdown open", "reason": "no Figma frame for the open state" }
+      { "figmaNodeId": "100:210", "state": "nav dropdown open", "reason": "no Figma frame for the open state" }
     ],
     "coveredViaComponent": [
-      { "route": "/multiple-directors", "state": "default", "breakpoint": 393,
-        "coveredVia": "/single-director", "componentId": "Hero/Audience" }
+      { "route": "/service-b", "state": "default", "breakpoint": 393,
+        "coveredVia": "/service-a", "componentId": "Hero/Service" }
+    ]
+  },
+  "reviewPlan": {
+    "cells": [
+      { "route": "/service-b", "breakpoint": 393, "state": "default",
+        "figmaNodeId": "100:203", "sectionName": "01-hero" },
+      { "route": "/service-b", "breakpoint": 393, "state": "nav open",
+        "figmaNodeId": "100:204", "sectionName": "02-nav" }
     ]
   },
   "knownAccepted": [
-    { "what": "hero copy/imagery is single-director on every audience route",
-      "why": "no CMS binding yet; owner decision 2026-08-03", "reviewBy": "2026-09-01" }
+    { "what": "service hero uses shared placeholder copy",
+      "why": "content binding pending; owner decision", "reviewBy": "YYYY-MM-DD" }
   ],
   "externalReferences": [
-    { "url": "https://www.sparkadvisors.com/services",
-      "route": "/single-director",
-      "note": "client-cited animation reference, not in Figma",
-      "source": "client correspondence, 2026-08-06",
+    { "url": "https://reference.example/services",
+      "route": "/service-a",
+      "note": "stakeholder-cited animation reference, not in Figma",
+      "source": "approved project correspondence",
       "checked": "human/visual only, outside this skill's Figma-diff model" }
   ],
   "scheduledForDeletion": [
-    { "route": "/team-members/qa-placeholder",
+    { "route": "/team/example",
       "why": "placeholder person shown beside real team members",
-      "decidedBy": "owner", "decidedOn": "2026-08-05" }
+      "decidedBy": "owner", "decidedOn": "YYYY-MM-DD" }
   ]
 }
 ```
 
-Only `routes[].sections[].name` and `routes[].sections[].selector` are needed to
-drive a capture. Every other field raises the quality of the report. A small
-project with one route and no shared components can skip `components` and
-`coverage.coveredViaComponent` entirely and keep the flatter single-route shape
-this map used before; add the registry once a second route shares a component.
+Every parity run also needs explicit `reviewPlan.cells`. This is the denominator,
+written before capture rather than reconstructed from successful evidence. Each
+cell names a route, numeric breakpoint, state, exact Figma node and section name.
+Freeze the relevant cells with `scripts/freeze_plan.mjs`; the capture and
+manifest bind themselves to that plan and the map hash. A small project can skip
+the component registry, but it cannot skip the review plan.
 
 ## Every claim carries a date
 
@@ -166,7 +181,7 @@ hour.
 
 ## What does not belong in the map
 
-Keep the map durable. Move these items elsewhere:
+Keep the map useful over time. Move these items elsewhere:
 
 - **Session narrative**, such as "build progress, 2026-07-23." Use `git log` for
   this.
@@ -176,5 +191,5 @@ Keep the map durable. Move these items elsewhere:
   not need restating. The *Figma node it corresponds to* does need restating,
   because nothing else records it.
 
-A map that mixes durable structure with transient narrative gets skimmed, not
-trusted. Stale lines then survive, because nobody reads the map closely.
+A map that mixes lasting facts with a diary gets skimmed rather than trusted.
+Old lines then survive because nobody reads it closely.

@@ -8,7 +8,7 @@
  * unknown, and unknown must degrade a finding's confidence — never be assumed.
  *
  *   node capture.mjs --url <url> --width 1512 --label desktop \
- *     --map figma-map.json --out <run-dir> [--gutter auto|<px>] [--sections a,b]
+ *     --map figma-map.json --plan review-plan.json --out <run-dir> [--gutter auto|<px>] [--sections a,b]
  *
  * Writes into <run-dir>:
  *   live/full-<label>.png              full-page screenshot
@@ -33,15 +33,17 @@ const width = Number(arg('width', 1512));
 const label = arg('label', `w${width}`);
 const out = path.resolve(arg('out', process.cwd()));
 const mapPath = arg('map');
+const planPath = arg('plan');
 const gutterOpt = arg('gutter', 'auto');
 const only = arg('sections');
-if (!url) {
-  console.error('usage: capture.mjs --url <url> --width <px> --label <name> --out <dir> [--map figma-map.json]');
+if (!url || !mapPath || !planPath) {
+  console.error('usage: capture.mjs --url <url> --width <px> --label <name> --out <dir> --map figma-map.json --plan review-plan.json');
   process.exit(2);
 }
 const LIVE = path.join(out, 'live');
 fs.mkdirSync(LIVE, { recursive: true });
 const log = (m) => process.stderr.write(`[${label}] ${m}\n`);
+const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 
 // Sections come from the project map so pairing is explicit, never inferred
 // from a filename index. See references/project-map.md.
@@ -53,10 +55,24 @@ export function resolveRoute(map, wanted) {
   return { ...map, ...hit };
 }
 
+const mapFile = path.resolve(mapPath);
+const planFile = path.resolve(planPath);
+const mapBytes = fs.readFileSync(mapFile);
+const planBytes = fs.readFileSync(planFile);
+const plan = JSON.parse(planBytes);
+if (plan.provider !== 'figma-parity-plan' || plan.schemaVersion !== 1) throw new Error('review plan is invalid');
+if (plan.source?.mapSha256 !== sha256(mapBytes)) throw new Error('figma map changed after the review plan was frozen');
+if (plan.scope?.breakpoint !== width) throw new Error(`review plan is for ${plan.scope?.breakpoint}px, not ${width}px`);
+if (arg('route') && plan.scope?.route !== arg('route')) throw new Error(`review plan is for ${plan.scope?.route}, not ${arg('route')}`);
+const targetPath = new URL(url).pathname.replace(/\/$/, '') || '/';
+const plannedPath = String(plan.scope?.route || '').replace(/\/$/, '') || '/';
+if (targetPath !== plannedPath) throw new Error(`target URL path ${targetPath} does not match frozen review-plan route ${plannedPath}`);
+
 let sections = [];
-if (mapPath) {
-  const map = resolveRoute(JSON.parse(fs.readFileSync(path.resolve(mapPath), 'utf8')), arg('route'));
-  sections = (map.sections || []).filter((s) => s.selector && s.name);
+{
+  const map = resolveRoute(JSON.parse(mapBytes), plan.scope.route);
+  const plannedDefaults = new Set(plan.cells.filter((cell) => cell.state === 'default').map((cell) => cell.sectionName));
+  sections = (map.sections || []).filter((s) => s.selector && s.name && plannedDefaults.has(s.name));
   if (only) {
     const wanted = new Set(only.split(','));
     sections = sections.filter((s) => wanted.has(s.name));
@@ -73,8 +89,6 @@ const CAPTURE_CSS = `
   }
   html { scroll-behavior: auto !important; }
 `;
-
-const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 
 /** Fetch the raw document so target mutation mid-run is detectable. */
 async function fingerprintTarget() {
@@ -284,6 +298,7 @@ if (!targetStable) log('WARNING the served document changed during this run — 
 const packet = {
   captureContract: 1,
   captureProvider: 'local',
+  plan: { path: path.relative(out, planFile), sha256: sha256(planBytes) },
   url,
   label,
   status: response?.status() ?? null,

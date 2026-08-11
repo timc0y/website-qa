@@ -1,8 +1,23 @@
 # Figma parity report template
 
+## In this file
+
+- Keep comments and soft concerns
+- Handle pages marked for deletion
+- Report structure and severity
+- Checks before publishing a finding
+
 Rank the findings by severity. For each finding, give the **Figma value and the
 Live value** as concrete numbers. A developer must be able to act on the finding
 without a re-measurement. Mark the confidence level when it is relevant.
+
+Do not infer inspection or a verdict from the generated manifest. Cite the
+attestation actor, criterion and evidence IDs for every claimed match or
+mismatch. If no valid attestation exists, describe only the captured observation
+and leave the conclusion unreviewed.
+
+An unsigned `human-unverified` record documents a person's stated review but
+does not satisfy a delivery gate. Do not shorten that label to “human verified.”
 
 ## Soft findings survive consolidation
 
@@ -43,7 +58,7 @@ Figma node. Did not use a guessed token. Side-by-side images: <review folder pat
 | Route/component | Breakpoint | State | Result | Evidence |
 |---|---:|---|---|---|
 | / | 390 | mobile menu open | compared | 390/menu-open/01-nav.png |
-| /multiple-directors | 390 | default | covered via /single-director (Hero/Audience) | figma-map.json#components |
+| /service-b | 390 | default | covered via /service-a (Hero/Service) | figma-map.json#components |
 
 List a missing cell explicitly. Do not omit it silently.
 

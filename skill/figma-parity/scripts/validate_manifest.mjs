@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 
-const file = path.resolve(process.argv[2] || "figma-parity-manifest.json");
+const cliArgs = process.argv.slice(2);
+const allowLegacy = cliArgs.includes("--allow-legacy");
+const file = path.resolve(cliArgs.find((value) => !value.startsWith("--")) || "figma-parity-manifest.json");
 const root = path.dirname(file);
 const errors = [];
 const warnings = [];
@@ -20,16 +23,21 @@ const localFile = (candidate, label) => {
   if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) errors.push(`${label} escapes the run directory`);
   else if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) errors.push(`${label} is missing: ${candidate}`);
 };
+const digest = (candidate) => crypto.createHash("sha256").update(fs.readFileSync(candidate)).digest("hex");
 
 // Additive versions must not break older consumers (Parallax imports this packet),
 // so accept any known version and only warn about a newer one.
-const KNOWN_VERSIONS = [1, 2, 3];
+const KNOWN_VERSIONS = [1, 2, 3, 4];
 if (!KNOWN_VERSIONS.includes(packet.schemaVersion)) {
   if (Number.isInteger(packet.schemaVersion) && packet.schemaVersion > Math.max(...KNOWN_VERSIONS)) {
     warnings.push(`schemaVersion ${packet.schemaVersion} is newer than this validator knows (${KNOWN_VERSIONS.join(", ")}); additive fields are ignored`);
   } else {
     errors.push(`schemaVersion must be one of ${KNOWN_VERSIONS.join(", ")}`);
   }
+}
+if ([1, 2, 3].includes(packet.schemaVersion)) {
+  if (allowLegacy) warnings.push(`legacy schemaVersion ${packet.schemaVersion} is parseable but its generated inspection/confidence fields are not trusted`);
+  else errors.push(`legacy schemaVersion ${packet.schemaVersion} cannot be validated as trustworthy; regenerate an observation-only v4 manifest`);
 }
 if (packet.provider !== "figma-parity") errors.push("provider must be figma-parity");
 required(packet.generatedAt, "generatedAt");
@@ -50,7 +58,7 @@ if (![requested, compared, missing].every(Array.isArray)) errors.push("coverage 
 else if (!Array.isArray(coveredViaComponent)) errors.push("coverage.coveredViaComponent must be an array when present");
 else {
   const wanted = new Set(requested.map(cellKey));
-  const accounted = [...compared, ...missing, ...coveredViaComponent].map(cellKey);
+  const accounted = [...compared, ...missing, ...(packet.schemaVersion < 4 ? coveredViaComponent : [])].map(cellKey);
   if (new Set(accounted).size !== accounted.length) errors.push("coverage cells must be accounted for exactly once");
   for (const key of wanted) if (!accounted.includes(key)) errors.push(`requested coverage cell is unaccounted: ${key.replaceAll("\0", " / ")}`);
   for (const key of accounted) if (!wanted.has(key)) errors.push(`accounted coverage cell was not requested: ${key.replaceAll("\0", " / ")}`);
@@ -59,12 +67,46 @@ else {
     required(cell.coveredVia, `coverage.coveredViaComponent ${cellKey(cell)} coveredVia`);
     required(cell.componentId, `coverage.coveredViaComponent ${cellKey(cell)} componentId`);
   }
+  if (packet.schemaVersion === 4) {
+    for (const cell of coveredViaComponent) {
+      if (!missing.some((entry) => cellKey(entry) === cellKey(cell))) {
+        errors.push(`coverage.coveredViaComponent is an annotation and cannot satisfy schemaVersion 4 cell: ${cellKey(cell).replaceAll("\0", " / ")}`);
+      }
+    }
+  }
+}
+
+if (packet.schemaVersion === 4) {
+  required(packet.plan?.path, "plan.path");
+  required(packet.plan?.sha256, "plan.sha256");
+  required(packet.plan?.mapSha256, "plan.mapSha256");
+  const planFile = packet.plan?.path ? path.resolve(root, packet.plan.path) : null;
+  localFile(packet.plan?.path, "plan.path");
+  if (planFile && fs.existsSync(planFile)) {
+    if (digest(planFile) !== packet.plan.sha256) errors.push("plan hash does not match");
+    try {
+      const plan = JSON.parse(fs.readFileSync(planFile, "utf8"));
+      if (plan.provider !== "figma-parity-plan" || plan.schemaVersion !== 1) errors.push("plan artifact is invalid");
+      if (plan.source?.mapSha256 !== packet.plan.mapSha256) errors.push("plan map hash does not match the manifest");
+      const planned = new Set((plan.cells || []).map(cellKey));
+      const manifested = new Set((packet.coverage?.requested || []).map(cellKey));
+      if (planned.size !== manifested.size || [...planned].some((key) => !manifested.has(key))) {
+        errors.push("coverage.requested does not exactly match the frozen review plan");
+      }
+    } catch (error) {
+      errors.push(`plan artifact is unreadable: ${error.message}`);
+    }
+  }
 }
 
 if (!Array.isArray(packet.evidence) || !packet.evidence.length) errors.push("evidence must not be empty");
-else for (const [index, item] of packet.evidence.entries()) {
+else {
+const evidenceIds = new Set();
+for (const [index, item] of packet.evidence.entries()) {
   const label = `evidence[${index}]`;
   required(item.id, `${label}.id`);
+  if (evidenceIds.has(item.id)) errors.push(`${label}.id is duplicated: ${item.id}`);
+  evidenceIds.add(item.id);
   required(item.route, `${label}.route`);
   if (!Number.isInteger(item.breakpoint) || item.breakpoint < 1) errors.push(`${label}.breakpoint must be a positive integer`);
   required(item.state, `${label}.state`);
@@ -78,11 +120,16 @@ else for (const [index, item] of packet.evidence.entries()) {
   localFile(item.comparison?.sideBySidePath, `${label}.comparison.sideBySidePath`);
   localFile(item.comparison?.diffPath, `${label}.comparison.diffPath`);
   localFile(item.comparison?.metricsPath, `${label}.comparison.metricsPath`);
-  if (typeof item.inspected !== "boolean") errors.push(`${label}.inspected must be boolean`);
-  if (!["verified", "visual-only", "suspected"].includes(item.confidence)) errors.push(`${label}.confidence is invalid`);
+  if (packet.schemaVersion === 4) {
+    if (Object.hasOwn(item, "inspected")) errors.push(`${label}.inspected is an attestation and must not appear in an observation manifest`);
+    if (Object.hasOwn(item, "confidence")) errors.push(`${label}.confidence is a conclusion and must not appear in an observation manifest`);
+  } else {
+    if (typeof item.inspected !== "boolean") errors.push(`${label}.inspected must be boolean`);
+    if (!["verified", "visual-only", "suspected"].includes(item.confidence)) errors.push(`${label}.confidence is invalid`);
+  }
 
-  // Unknown capture conditions must not be dressed up as verified evidence.
-  if (item.confidence === "verified") {
+  // Retain strict validation for legacy packets without endorsing their model.
+  if (packet.schemaVersion < 4 && item.confidence === "verified") {
     if (item.live?.observedContentWidth === null) errors.push(`${label} is verified but live.observedContentWidth is unknown; horizontal measurement cannot be verified`);
     else if (Number.isInteger(item.live?.observedContentWidth) && item.live.observedContentWidth !== item.breakpoint) {
       errors.push(`${label} is verified but content width was ${item.live.observedContentWidth}px against breakpoint ${item.breakpoint}px`);
@@ -91,6 +138,10 @@ else for (const [index, item] of packet.evidence.entries()) {
       errors.push(`${label} is verified while target.stable is false and it lists no limitation`);
     }
   }
+}
+}
+if (packet.schemaVersion === 4 && packet.execution?.capabilities?.visualComparison === true) {
+  errors.push("execution.capabilities.visualComparison cannot be true in an observation-only manifest; cite a valid review attestation separately");
 }
 
 // Findings, when present, must carry an owner. `both` exists for the case where
@@ -102,6 +153,9 @@ for (const key of ["findings", "designSourceDefects"]) {
     required(finding.summary, `${key}[${index}].summary`);
     if (!["high", "medium", "low", "motion"].includes(finding.severity)) errors.push(`${key}[${index}].severity is invalid`);
     if (!["build", "design", "both", "content"].includes(finding.owner)) errors.push(`${key}[${index}].owner is invalid`);
+    if (packet.schemaVersion === 4 && Object.hasOwn(finding, "confidence")) {
+      errors.push(`${key}[${index}].confidence is a conclusion and must be recorded through a review attestation`);
+    }
     for (const id of finding.evidenceIds || []) {
       if (!packet.evidence?.some((e) => e.id === id)) errors.push(`${key}[${index}] cites unknown evidence id: ${id}`);
     }
@@ -147,6 +201,7 @@ if (packet.target?.stable === false && !(packet.limitations || []).some((l) => /
   errors.push("target.stable is false but no limitation discloses that the target changed mid-run");
 }
 if (!Array.isArray(packet.limitations)) errors.push("limitations must be an array");
+for (const [name, candidate] of Object.entries(packet.artifacts || {})) localFile(candidate, `artifacts.${name}`);
 
 if (warnings.length) console.error(`WARNINGS (${warnings.length})\n${warnings.map((w) => `- ${w}`).join("\n")}`);
 if (errors.length) {

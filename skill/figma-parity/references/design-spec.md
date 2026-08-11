@@ -1,4 +1,13 @@
-# The design spec: one artifact, written once, used twice
+# The design spec: one file for the build and the review
+
+## In this file
+
+- Why the build and review share one file
+- The rule for taking values from Figma
+- JSON format and examples
+- How text matching works
+- How to derive values and choose tolerances
+- What the file should not contain
 
 A **design spec** is a small JSON file. It records what a page's sections were
 *supposed* to be, in numbers, extracted from the design source before anything
@@ -6,12 +15,12 @@ is built.
 
 It has exactly two jobs:
 
-1. **Producer side**: force a person to read the intent off the design source
+1. **Before building**: make a person read the design source as exact values
    as values, not to absorb it from a picture of the source. Extracting `32px`
    is a different act from looking at a heading and reaching for the nearest
    existing scale step.
-2. **Consumer side**: turn verification from a fresh interpretation of the
-   design into a **diff against the thing the team built to**. Without a spec,
+2. **During review**: compare the finished page with the same agreed values.
+   Without a spec,
    an audit can only ask "is this page self-consistent?" With a spec, it can
    say which value the team intended.
 
@@ -31,14 +40,14 @@ that crosses between them fixes this problem:
 
 - neither side imports, invokes, or names the other;
 - the numbers are reviewable in a diff, and a designer can correct them;
-- the file is a durable artifact. Commit it next to the site, and every later
-  run compares against the same baseline;
+- the file is a lasting record. Save it next to the site so every later run
+  compares against the same agreed values;
 - a team with no design file at all can still write one by hand, from a
   written standard such as "all sections use a 70px gutter; headings use DM
   Serif Text."
 
-Nothing here is coupled to a particular design tool. The `source` field is
-provenance only.
+The format works with any design tool. The `source` field simply records where
+the values came from.
 
 ## The one rule that makes this file worth writing
 
@@ -47,21 +56,21 @@ value from a global token, and never take one from memory.** A design file
 reuses many near-identical type and color tokens: a 62px *and* a 72px display
 serif; a 12px *and* a 14px uppercase eyebrow. A value copied from the wrong
 token produces a spec that is confidently wrong. This is worse than no spec,
-because the consumer will then report a correct build as broken.
+because the reviewer will then report a correct build as broken.
 
 Recalling that "the medium title is 54px" is a guess. A wrong guess silently
 forks the design system.
 
-## Schema
+## File format
 
 Only `text`, or a section's `anchorText`, is required. Every other field is
-optional, so a spec can start as three lines and grow. A consumer ignores a key
+optional, so a spec can start as three lines and grow. A reader ignores a key
 it does not understand.
 
 ```jsonc
 {
   "name": "Marketing site — About",
-  "source": {                      // provenance only; no consumer fetches this
+  "source": {                      // records where the values came from
     "kind": "figma",
     "fileKey": "…",
     "frames": { "desktop": "550:6890", "mobile": "550:11122" }
@@ -110,6 +119,16 @@ it does not understand.
       "long":  "wraps to 2 lines; siblings must top-align, not centre" }
   ],
 
+  "behaviors": [
+    // Record outcomes, not implementation guesses. These are shared acceptance
+    // criteria for the build and the review at desktop, mobile and fallback states.
+    { "name": "results reveal", "trigger": "results enter the viewport",
+      "desktop": "cards reveal once in reading order",
+      "mobile": "same order; no horizontal overflow",
+      "reducedMotion": "results are immediately visible",
+      "noJavaScript": "results remain readable" }
+  ],
+
   "decisions": [
     // Every place the design and the existing system disagree. One line each, resolved
     // by a human at scope time — not silently, mid-build.
@@ -126,7 +145,7 @@ it does not understand.
   ],
 
   "handoffs": [
-    // Steps the producer cannot perform and a human must. Listed ONCE, up front.
+    // Steps the builder cannot perform and a human must. Listed ONCE, up front.
     { "what": "rich-text field content on a new component", "why": "not settable through the available API" }
   ]
 }
@@ -145,7 +164,7 @@ here**. It is not a promise that nothing needs a check.
 
 A class name churns between the design and the build, and it means nothing
 across that boundary. The **words on the page** are the one identifier both
-sides share, so a consumer matches on the normalized rendered text: lowercased,
+sides share, so the QA runner matches on the normalised rendered text: lowercased,
 with the whitespace collapsed and the punctuation stripped.
 
 Two refinements, and each one cost a real run to discover:

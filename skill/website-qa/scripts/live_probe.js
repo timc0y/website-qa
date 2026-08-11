@@ -110,7 +110,7 @@
   window.hideOverlays = () => {
     const sels = ['.marker-app','[class*="marker"]','[class*="intercom"]','[id*="hubspot"]',
       '[class*="cookie"]','[class*="devtool"]','[class*="dev-mode"]','[class*="localcan"]',
-      '[data-dev]','[id*="staging-toolbar"]','[class*="debug"]'];
+      '[data-dev]','[class*="debug"]'];
     let n = 0; document.querySelectorAll(sels.join(',')).forEach(e => { e.style.setProperty('display','none','important'); n++; });
     return 'hid ' + n + ' overlay(s)';
   };
