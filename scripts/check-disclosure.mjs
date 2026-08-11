@@ -58,6 +58,7 @@ const allowedExternalDomains = new Set([
   'help.webflow.com',
   'json-schema.org',
   'playwright.dev',
+  'raw.githubusercontent.com',
   'reference.example',
   'registry.npmjs.org',
   's.com',
