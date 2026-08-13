@@ -42,6 +42,11 @@ const absolutePathPatterns = [
 const opaqueIdPattern = /\b[0-9a-f]{24}\b/i;
 const populatedFigmaUrlPattern = /https:\/\/(?:www\.)?figma\.com\/design\/(?![<:]|example(?:[-_]))[A-Za-z0-9_-]{8,}\//i;
 const allowedExternalDomains = new Set([
+  'webkit.org',
+  'web.dev',
+  'chromestatus.com',
+  'caniuse.com',
+  'bugs.webkit.org',
   '127.0.0.1',
   'localhost',
   'cdn.example.test',
