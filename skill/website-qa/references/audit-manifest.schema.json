@@ -36,7 +36,7 @@
     "configuration": { "type": "object" },
     "artifacts": {
       "type": "object",
-      "required": ["findings", "summary"],
+      "required": ["findings", "findingIndex", "summary"],
       "additionalProperties": { "type": ["string", "null"] }
     },
     "evidence": {

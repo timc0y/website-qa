@@ -9,8 +9,8 @@
  * Keeping the vocabulary here means adapting the sweep
  * to a new codebase is editing one map, never touching a check.
  *
- * Override per-run with `--selectors=./my-vocab.json`; keys are merged over these
- * defaults, so a JSON file only needs the entries it wants to change.
+ * Extend per-run with a schema-versioned `--vocabulary=./vocabulary.json`
+ * artifact. The public file is the only extension input.
  *
  * The defaults lean on three things that are true of almost every site:
  *   1. Native elements plus ARIA roles and states — `[role=tab]`,
@@ -85,6 +85,13 @@ export const DEFAULT_VOCAB = {
   devHosts: 'localhost|127\\.0\\.0\\.1|:5500|ngrok|\\.local/|file://'
 };
 
-/* Merge a JSON override file over the defaults. Unknown keys pass through, so a
-   project can add its own vocabulary entries for bespoke checks. */
-export const loadVocab = (json) => ({ ...DEFAULT_VOCAB, ...(json || {}) });
+export const loadVocab = (artifact) => {
+  if (artifact === null || artifact === undefined) return DEFAULT_VOCAB;
+  if (artifact.schemaVersion !== 1 || !artifact.selectors || typeof artifact.selectors !== 'object' || Array.isArray(artifact.selectors)) {
+    throw new Error('vocabulary must be a schemaVersion 1 artifact with a selectors object');
+  }
+  for (const [key, value] of Object.entries(artifact.selectors)) {
+    if (typeof value !== 'string') throw new Error(`vocabulary selectors.${key} must be a string`);
+  }
+  return { ...DEFAULT_VOCAB, ...artifact.selectors };
+};

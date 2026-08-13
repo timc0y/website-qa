@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "package": "website-quality",
+  "requiredHarnesses": ["codex", "claude", "opencode"],
+  "optionalHarnesses": ["gemini"],
+  "skills": [
+    { "name": "website-qa", "path": "skill/website-qa", "visibility": "public", "question": "Is the rendered website sound?" },
+    { "name": "figma-parity", "path": "skill/figma-parity", "visibility": "public", "question": "Does the rendered website match the approved design?" }
+  ]
+}

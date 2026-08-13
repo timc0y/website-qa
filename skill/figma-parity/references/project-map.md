@@ -66,6 +66,17 @@ follows the page from top to bottom.
 {
   "fileKey": "example-file-key",
   "fileUrl": "https://www.figma.com/design/<key>/<name>",
+  "authority": {
+    "canonicalCanvas": {
+      "nodeId": "0:1",
+      "name": "Approved website",
+      "versionId": "optional pinned Figma version id"
+    },
+    "verified": "YYYY-MM-DD",
+    "alternates": [
+      { "nodeId": "0:2", "name": "Exploration", "status": "non-authoritative" }
+    ]
+  },
 
   "components": {
     "$comment": "covers the declared review scope. breakpoint is the same numeric CSS/frame width used everywhere else in this map (see routes[].breakpoints), never a label like 'desktop' or 'mobile' — the manifest coverage cells key on that number.",

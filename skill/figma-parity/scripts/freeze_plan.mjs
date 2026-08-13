@@ -20,6 +20,12 @@ try {
     throw new Error("Use --map <figma-map.json> --route <path> --breakpoint <px> [--out review-plan.json]");
   }
   const map = JSON.parse(fs.readFileSync(mapFile, "utf8"));
+  for (const field of ["nodeId", "name"]) {
+    if (typeof map.authority?.canonicalCanvas?.[field] !== "string" || !map.authority.canonicalCanvas[field].trim()) {
+      throw new Error(`figma-map authority.canonicalCanvas.${field} is required`);
+    }
+  }
+  if (typeof map.authority?.verified !== "string" || !map.authority.verified.trim()) throw new Error("figma-map authority.verified is required");
   const cells = (map.reviewPlan?.cells || []).filter((cell) => cell.route === route && cell.breakpoint === breakpoint);
   if (!cells.length) throw new Error(`figma-map reviewPlan has no cells for ${route} at ${breakpoint}px`);
   const seen = new Set();

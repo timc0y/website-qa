@@ -26,9 +26,9 @@ will be added.
 
 - **Consumers tolerate absence.** "No manifest found" is a normal state that narrows
   what can be concluded — not an error. Report what was lost instead of failing.
-- **Schemas evolve additively.** New fields only, with `schemaVersion` bumped; the
-  validator warns on an unknown newer version rather than rejecting it, so a consumer
-  built against v1 keeps working against a v2 packet.
+- **One current schema.** A format change bumps `schemaVersion`; validators reject
+  every other version. Producers and consumers move together. Do not add aliases,
+  dual-write fields, or implicit parsing fallbacks.
 - **Provider identity survives.** A capture obtained elsewhere keeps its originating
   `captureProvider` and is never relabelled as a local capture. A remote screenshot
   service cannot establish Figma parity by itself — the Figma reference has to be

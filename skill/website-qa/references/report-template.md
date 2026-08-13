@@ -21,7 +21,9 @@ the smallest useful reproduction.
 
 ## Findings
 
-Order by severity, then by confidence:
+For a single route, order by severity, then confidence. For a consolidated
+multi-route report, organize by page first and use severity then confidence
+inside each page:
 
 1. defects
 2. cross-browser differences and device hazards
@@ -44,3 +46,17 @@ an “everything else passed” claim.
 State what the review could not prove: untested route families, unavailable
 engines or devices, authenticated states, backend delivery, form submission,
 unreadable stylesheets, unsettled screenshots, or capped link/state coverage.
+
+## Consolidating many pages into one status file
+
+The "URL" field above is not optional decoration in a multi-route report or
+status file. Make it a real clickable link
+(including the query param a reader needs to see the real build, e.g. `?dev=0`
+on a project with a dev/live JS toggle), and when consolidating findings from
+two or more routes into one file, organize the file's main body **by page**,
+each with its own heading and that link at the top, not by severity or topic
+alone. A reader who wants to see what a finding describes will not
+reconstruct the URL by hand across dozens of findings. A finding nobody looks
+at is a finding nobody fixes. Sitewide items (nav, footer, a shared component
+touching many routes) get their own heading with one representative link,
+not a copy of the same line repeated under every page it reaches.

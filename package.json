@@ -6,6 +6,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "check:manifest": "node scripts/check-manifest.mjs",
     "check:disclosure": "node scripts/check-disclosure.mjs",
     "check:contracts": "node scripts/check-contracts.mjs",
     "check:skill-docs": "node scripts/check-skill-docs.mjs",
@@ -15,8 +16,9 @@
     "test:crosspage": "node skill/website-qa/tests/check-crosspage.mjs",
     "test:cascade": "node skill/website-qa/tests/check-cascade.mjs",
     "test:detectors": "node skill/website-qa/tests/check-fixtures.mjs",
+    "test:extensions": "node skill/website-qa/tests/check-extension-contracts.mjs",
     "test:figma-parity": "node skill/figma-parity/tests/check-scripts.mjs",
-    "test": "npm run check:disclosure && npm run check:skill-docs && npm run check:contracts && npm run test:regress && npm run test:crosspage && npm run test:cascade && npm run test:detectors && npm run test:figma-parity"
+    "test": "npm run check:manifest && npm run check:disclosure && npm run check:skill-docs && npm run check:contracts && npm run test:regress && npm run test:crosspage && npm run test:cascade && npm run test:detectors && npm run test:extensions && npm run test:figma-parity"
   },
   "dependencies": {
     "playwright": "1.62.1"

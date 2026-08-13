@@ -1,19 +1,18 @@
 #!/usr/bin/env node
-import { existsSync, lstatSync, mkdirSync, readlinkSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
-const skills = new Map([
-  ['website-qa', path.join(root, 'skill', 'website-qa')],
-  ['figma-parity', path.join(root, 'skill', 'figma-parity')],
-]);
-const destinations = [
-  path.join(homedir(), '.codex', 'skills'),
-  path.join(homedir(), '.claude', 'skills'),
-  path.join(homedir(), '.config', 'opencode', 'skills'),
-  path.join(homedir(), '.gemini', 'config', 'skills'),
-];
+const manifest = JSON.parse(readFileSync(path.join(root, 'skills.manifest.json'), 'utf8'));
+const skills = new Map(manifest.skills.map((skill) => [skill.name, path.resolve(root, skill.path)]));
+const harnessPaths = {
+  codex: path.join(homedir(), '.codex', 'skills'),
+  claude: path.join(homedir(), '.claude', 'skills'),
+  opencode: path.join(homedir(), '.config', 'opencode', 'skills'),
+  gemini: path.join(homedir(), '.gemini', 'config', 'skills'),
+};
+const destinations = [...manifest.requiredHarnesses, ...(manifest.optionalHarnesses || [])].map((name) => harnessPaths[name]);
 const check = process.argv.includes('--check');
 let drift = 0;
 
@@ -23,7 +22,12 @@ function linkTarget(file) {
 }
 
 for (const destination of destinations) {
-  mkdirSync(destination, { recursive: true });
+  if (!existsSync(destination)) {
+    drift += 1;
+    console.log(`${check ? 'DRIFT' : 'FIX'} create ${destination}`);
+    if (!check) mkdirSync(destination, { recursive: true });
+    else continue;
+  }
   for (const [name, target] of skills) {
     const link = path.join(destination, name);
     const current = linkTarget(link);

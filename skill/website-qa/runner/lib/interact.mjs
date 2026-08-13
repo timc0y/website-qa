@@ -10,7 +10,7 @@
  * Each export takes a Playwright `page` and returns a plain findings object.
  *
  * Nothing here knows about any particular site. Every selector comes from
- * `vocab.mjs` and can be swapped per project with `--selectors=file.json`; the
+ * `vocab.mjs` and can be extended per project with `--vocabulary=file.json`; the
  * checks themselves reason about shapes — a repeated group, a toggle, a panel that
  * appeared, something painting on top of it.
  */

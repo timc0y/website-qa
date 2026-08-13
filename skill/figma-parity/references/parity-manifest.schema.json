@@ -6,10 +6,7 @@
   "additionalProperties": true,
   "required": ["schemaVersion", "provider", "generatedAt", "targetUrl", "source", "execution", "coverage", "evidence", "limitations"],
   "properties": {
-    "schemaVersion": {
-      "enum": [1, 2, 3, 4],
-      "description": "4 makes the manifest observation-only. Generated evidence no longer carries inspected or confidence conclusions; those belong in a separate hash-bound review attestation."
-    },
+    "schemaVersion": { "const": 4 },
     "provider": { "const": "figma-parity" },
     "generatedAt": { "type": "string", "format": "date-time" },
     "targetUrl": { "type": "string", "format": "uri" },
@@ -145,8 +142,6 @@
               "metricsPath": { "type": "string", "minLength": 1 }
             }
           },
-          "inspected": { "type": "boolean", "deprecated": true, "description": "Legacy schemaVersion 1-3 only. Version 4 stores review attestations separately." },
-          "confidence": { "enum": ["verified", "visual-only", "suspected"], "deprecated": true, "description": "Legacy schemaVersion 1-3 only. Version 4 observation manifests cannot claim a conclusion." },
           "limitations": { "type": "array", "items": { "type": "string" } }
         }
       }
@@ -180,7 +175,7 @@
     "limitations": { "type": "array", "items": { "type": "string" } },
     "externalReferences": {
       "type": "array",
-      "description": "schemaVersion 3+. A live reference site named in client correspondence, outside this skill's Figma-diff model. Passed through from the project map for a human visual check. See references/project-map.md.",
+      "description": "A live reference site named in client correspondence, outside this skill's Figma-diff model. Passed through from the project map for a human visual check. See references/project-map.md.",
       "items": {
         "type": "object",
         "required": ["url", "route", "note"],
@@ -195,7 +190,7 @@
     },
     "scheduledForDeletion": {
       "type": "array",
-      "description": "schemaVersion 3+. A page or route with a CONFIRMED owner decision to remove it, passed through from the project map so a report states it loudly instead of burying it in a coverage table. A flagged-but-undecided page belongs in designSourceDefects, not here. See references/project-map.md.",
+      "description": "A page or route with a CONFIRMED owner decision to remove it, passed through from the project map so a report states it loudly instead of burying it in a coverage table. A flagged-but-undecided page belongs in designSourceDefects, not here. See references/project-map.md.",
       "items": {
         "type": "object",
         "required": ["route", "why", "decidedBy", "decidedOn"],
@@ -220,7 +215,6 @@
         "live": { "type": "string" },
         "figmaNodeId": { "type": "string" },
         "severity": { "enum": ["high", "medium", "low", "motion"] },
-        "confidence": { "enum": ["verified", "visual-only", "suspected", "not-compared"], "deprecated": true, "description": "Legacy schemaVersion 1-3 only. Version 4 conclusions require a separate review attestation." },
         "owner": {
           "description": "`both` is legitimate: when the Figma source is internally inconsistent, a finding can require a design decision AND a build change. Do not force it into one bucket.",
           "enum": ["build", "design", "both", "content"]

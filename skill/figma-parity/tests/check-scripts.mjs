@@ -39,8 +39,9 @@ try {
   };
   const manifest = path.join(temp, "figma-parity-manifest.json");
   fs.writeFileSync(manifest, `${JSON.stringify(packet, null, 2)}\n`);
-  const valid = execFileSync("node", [path.join(root, "scripts/validate_manifest.mjs"), "--allow-legacy", manifest], { encoding: "utf8" });
-  assert.match(valid, /VALID/);
+  const oldPacket = spawnSync("node", [path.join(root, "scripts/validate_manifest.mjs"), manifest], { encoding: "utf8" });
+  assert.equal(oldPacket.status, 1);
+  assert.match(oldPacket.stderr, /schemaVersion must be 4/);
 
   packet.coverage.compared = [];
   fs.writeFileSync(manifest, `${JSON.stringify(packet, null, 2)}\n`);
@@ -53,94 +54,14 @@ try {
     copy.coverage.compared = [cell];
     mutate(copy);
     fs.writeFileSync(manifest, `${JSON.stringify(copy, null, 2)}\n`);
-    return spawnSync("node", [path.join(root, "scripts/validate_manifest.mjs"), "--allow-legacy", manifest], { encoding: "utf8" });
+    return spawnSync("node", [path.join(root, "scripts/validate_manifest.mjs"), manifest], { encoding: "utf8" });
   };
 
-  // schemaVersion 2 is accepted; a newer version warns rather than failing, so a
-  // packet from a future run stays readable by an older consumer.
-  assert.match(run((p) => { p.schemaVersion = 2; }).stdout, /VALID/);
+  // Only the current observation contract is accepted.
+  assert.match(run((p) => { p.schemaVersion = 2; }).stderr, /schemaVersion must be 4/);
   const future = run((p) => { p.schemaVersion = 99; });
-  assert.equal(future.status, 0);
-  assert.match(future.stderr, /newer than this validator/);
-
-  // Unknown capture conditions must not be dressed up as verified.
-  assert.match(run((p) => {
-    p.schemaVersion = 2;
-    p.evidence[0].live.observedContentWidth = null;
-  }).stderr, /observedContentWidth is unknown/);
-  assert.match(run((p) => {
-    p.schemaVersion = 2;
-    p.evidence[0].live.observedContentWidth = 375;
-  }).stderr, /content width was 375px/);
-
-  // A mid-run target change cannot be silently absorbed.
-  assert.match(run((p) => {
-    p.schemaVersion = 2;
-    p.target = { stable: false };
-  }).stderr, /no limitation discloses/);
-
-  // Forge cannot have driven a control locally.
-  assert.match(run((p) => {
-    p.schemaVersion = 2;
-    p.execution.mode = "forge-live-evidence";
-    p.execution.capabilities.interactionTransitions = true;
-  }).stderr, /cannot prove interactionTransitions/);
-
-  // Findings need a severity and an owner; `both` is legal, nonsense is not.
-  assert.match(run((p) => {
-    p.schemaVersion = 2;
-    p.findings = [{ summary: "x", severity: "high", owner: "both" }];
-  }).stdout, /VALID/);
-  assert.match(run((p) => {
-    p.schemaVersion = 2;
-    p.findings = [{ summary: "x", severity: "critical", owner: "nobody" }];
-  }).stderr, /severity is invalid/);
-  assert.match(run((p) => {
-    p.schemaVersion = 2;
-    p.findings = [{ summary: "x", severity: "low", owner: "build", evidenceIds: ["ghost"] }];
-  }).stderr, /unknown evidence id: ghost/);
-
-  // schemaVersion 3 adds coverage.coveredViaComponent, externalReferences and
-  // scheduledForDeletion. A backed claim is a normal, valid coverage cell.
-  const coveredCell = { route: "/", breakpoint: 393, state: "default", figmaNodeId: "1:9" };
-  assert.match(run((p) => {
-    p.schemaVersion = 3;
-    p.coverage.requested = [...p.coverage.requested, coveredCell];
-    p.coverage.coveredViaComponent = [{ ...coveredCell, coveredVia: "/other-route", componentId: "Hero/X" }];
-  }).stdout, /VALID/);
-
-  // A coveredViaComponent cell missing its provenance fields is rejected, not
-  // silently accepted as a plain compared cell would be.
-  assert.match(run((p) => {
-    p.schemaVersion = 3;
-    p.coverage.requested = [...p.coverage.requested, coveredCell];
-    p.coverage.coveredViaComponent = [{ ...coveredCell }];
-  }).stderr, /coveredVia/);
-
-  // externalReferences must name a URL, a route and a reason it isn't in Figma.
-  assert.match(run((p) => {
-    p.schemaVersion = 3;
-    p.externalReferences = [{ url: "https://example.test/services", route: "/service-a", note: "stakeholder-cited reference" }];
-  }).stdout, /VALID/);
-  assert.match(run((p) => {
-    p.schemaVersion = 3;
-    p.externalReferences = [{ route: "/service-a", note: "no url" }];
-  }).stderr, /externalReferences\[0\]\.url is required/);
-  assert.match(run((p) => {
-    p.schemaVersion = 3;
-    p.externalReferences = [{ url: "not-a-url", route: "/service-a", note: "bad url" }];
-  }).stderr, /must be an absolute URL/);
-
-  // scheduledForDeletion asserts a CONFIRMED decision; decidedBy/decidedOn are
-  // required so a hopeful guess cannot pass as a fact.
-  assert.match(run((p) => {
-    p.schemaVersion = 3;
-    p.scheduledForDeletion = [{ route: "/team/example", why: "placeholder person", decidedBy: "owner", decidedOn: "2026-08-05" }];
-  }).stdout, /VALID/);
-  assert.match(run((p) => {
-    p.schemaVersion = 3;
-    p.scheduledForDeletion = [{ route: "/team/example", why: "placeholder person" }];
-  }).stderr, /scheduledForDeletion\[0\]\.decidedBy is required/);
+  assert.equal(future.status, 1);
+  assert.match(future.stderr, /schemaVersion must be 4/);
 
   // compare_images.py refuses what would produce noise instead of evidence.
   const tall = path.join(temp, "tall.png");
@@ -163,7 +84,7 @@ try {
   assert.equal(cropped.croppedToCommon.height, 1);
   assert.equal(cropped.croppedToCommon.actualHeight, 3);
 
-  // compose_review pairs by name from the map, and warns when it cannot.
+  // compose_review pairs only by name from the required map.
   const figmaDir = path.join(temp, "fig");
   const liveDir = path.join(temp, "live");
   fs.mkdirSync(figmaDir); fs.mkdirSync(liveDir);
@@ -186,11 +107,11 @@ try {
   assert.equal(pairs.pairs[0].node, "550:6340");
   assert.match(pairs.pairs[0].live, /01-hero-desktop\.png$/);
 
-  const inferred = spawnSync("python3", [path.join(root, "scripts/compose_review.py"),
+  const withoutMap = spawnSync("python3", [path.join(root, "scripts/compose_review.py"),
     "--figma-dir", figmaDir, "--live-dir", liveDir,
     "--breakpoint", "desktop-1512", "--out", path.join(temp, "review2"), "--timestamp", "t"], { encoding: "utf8" });
-  assert.match(inferred.stderr, /pairing by filename index/);
-  assert.match(inferred.stderr, /names disagree/);
+  assert.equal(withoutMap.status, 2);
+  assert.match(withoutMap.stderr, /required: --map/);
 
   // build_manifest.mjs: a coveredViaComponent claim backed by the map's own
   // component registry becomes a real coverage cell; an unbacked claim is
@@ -223,6 +144,7 @@ try {
   const bmMap = path.join(temp, "bm-map.json");
   fs.writeFileSync(bmMap, JSON.stringify({
     fileKey: "abc", fileUrl: "https://figma.test/x", route: "/service-b",
+    authority: { canonicalCanvas: { nodeId: "0:1", name: "Approved website" }, verified: "2026-08-13" },
     sections: [{ name: "01-hero", figmaNodeId: "550:6340", selector: "section.hero" }],
     reviewPlan: { cells: [
       { route: "/service-b", breakpoint: 393, state: "default", figmaNodeId: "550:6340", sectionName: "01-hero" },
@@ -281,7 +203,7 @@ try {
   fs.writeFileSync(selfCertifiedFile, `${JSON.stringify(selfCertified, null, 2)}\n`);
   const rejectedSelfCertification = spawnSync("node", [path.join(root, "scripts/validate_manifest.mjs"), selfCertifiedFile], { encoding: "utf8" });
   assert.equal(rejectedSelfCertification.status, 1);
-  assert.match(rejectedSelfCertification.stderr, /must not appear in an observation manifest/);
+  assert.match(rejectedSelfCertification.stderr, /not part of the observation contract/);
   assert.match(rejectedSelfCertification.stderr, /visualComparison cannot be true/);
 
   // Review verdicts live in a separate artifact-bound attestation. The actor is

@@ -132,6 +132,25 @@ wording difference.
   crop; an unmatched state.
 ```
 
+## Consolidating many pages into one status file
+
+A single-page report can organize by severity; a reader already knows what page
+they are looking at. A status file that consolidates findings across two or more
+routes cannot. Organize its
+main body **by page**, then severity within the page, and give every page its
+own heading with the live URL as a clickable link (include the query param a
+reader needs to see the real build, e.g. `?dev=0` if the project uses a
+dev/live JS toggle). Do the same for every Figma node cited: link straight to
+`https://www.figma.com/design/<fileKey>/?node-id=<id-with-colon-replaced-by-hyphen>`,
+not just the bare node ID in backticks. A reader who has to reconstruct a URL
+by hand to see the page or the node a finding describes will not do it, and a
+finding nobody looks at is a finding nobody fixes.
+
+This applies even when a topic (nav, footer, a shared component) touches many
+pages at once — give it a "Sitewide" heading with one representative link,
+rather than repeating the same finding under every page it happens to reach,
+or dropping it into a severity table with no page context at all.
+
 ## Severity guide
 - **High:** a wrong, duplicated, or missing element; a broken interaction;
   unreadable contrast; a layout break; a missing nav or slider control.

@@ -20,3 +20,22 @@ assert.match(runner, /No physical device was used/);
 assert.doesNotMatch(runner, /filter\(image => image\.kind === 'tile' && image\.reviewable !== false\)/,
   'runner must retain unreviewable tiles in the evidence denominator');
 console.log('Website QA manifest declares physical-device coverage honestly.');
+
+assert.match(runner, /annotateFindings\(report\)/);
+assert.match(runner, /finding-index\.json/);
+assert.match(runner, /one\('vocabulary', ''\)/);
+assert.doesNotMatch(runner, /one\('selectors'/);
+const attributionValidator = readFileSync(path.join(root, 'website-qa', 'scripts', 'validate_attribution.mjs'), 'utf8');
+assert.match(attributionValidator, /findingId is not in the finding index/);
+console.log('Website QA exposes explicit vocabulary input and stable, sidecar-safe finding identities.');
+
+const spine = readFileSync(path.resolve(import.meta.dirname, '..', 'skill-spine.md'), 'utf8');
+for (const name of ['website-qa', 'figma-parity']) {
+  const source = readFileSync(path.join(root, name, 'SKILL.md'), 'utf8');
+  assert.match(source, /boundary → contract → selection → profile → execution → evidence → outcome → replay/);
+}
+assert.match(spine, /Client:/);
+assert.match(spine, /Visitor:/);
+assert.match(spine, /Developer:/);
+assert.match(spine, /Time:/);
+console.log('Public skills share the complete spine and four-seat foundation.');

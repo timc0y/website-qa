@@ -19,7 +19,7 @@
  * Run:
  *   node qa_runner.mjs --url=https://site.com [--url=https://site.com/about] \
  *     [--breakpoints=1920,1512,1280,991,767,479,393] [--out=./qa-run] \
- *     [--channel=chrome] [--wait=800] [--selectors=./vocab.json] \
+ *     [--channel=chrome] [--wait=800] [--vocabulary=./vocabulary.json] \
  *     [--baseline=./qa-run/<ts>] [--no-baseline] [--no-interact] [--no-scroll]
  *
  * Output: <out>/<timestamp>/<host><path>/ with fullpage-<w>.png per breakpoint,
@@ -44,6 +44,7 @@ import { DEFAULT_VOCAB, loadVocab } from './lib/vocab.mjs';
 import { findBaseline, loadBaseline, diffRuns, renderRegressionSection } from './lib/regress.mjs';
 import { crossPageAudit, renderCrossPageSection } from './lib/crosspage.mjs';
 import { summarizeConsole } from './lib/console.mjs';
+import { annotateFindings } from './lib/finding-ids.mjs';
 
 const ENGINES = { chromium, webkit, firefox };
 
@@ -70,7 +71,7 @@ const doLinks = !flag('no-links');
 // pass in both and reports what differs — the diff is the finding, not the raw counts.
 const engines = one('engines', 'chromium').split(',').map(s => s.trim()).filter(s => ENGINES[s]);
 if (!engines.length) engines.push('chromium');
-const vocabFile = one('selectors', '');
+const vocabFile = one('vocabulary', '');
 // The vision pass exists because measurement is blind to composition: a heading
 // colliding with the photo behind it, a row of cards where one is visually heavier,
 // an icon that's the wrong metaphor. Those are judgements about an image, so the
@@ -90,7 +91,8 @@ const designSpec = specFile && existsSync(specFile) ? JSON.parse(readFileSync(sp
  * newest previous run under --out; --baseline= picks one explicitly. */
 const baselineArg = one('baseline', '');
 const doBaseline = !flag('no-baseline');
-const vocab = loadVocab(vocabFile && existsSync(vocabFile) ? JSON.parse(readFileSync(vocabFile, 'utf8')) : null);
+if (vocabFile && !existsSync(vocabFile)) throw new Error(`vocabulary file does not exist: ${vocabFile}`);
+const vocab = loadVocab(vocabFile ? JSON.parse(readFileSync(vocabFile, 'utf8')) : null);
 const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
 const S = f => readFileSync(join(SCRIPTS, f), 'utf8');
@@ -461,7 +463,9 @@ const dir = join(outRoot, ts);
  * or canonical across every item. Invisible to a per-URL sweep by construction, so it is
  * computed over the whole report. Says so explicitly when given only one URL. */
 try { report.crossPage = crossPageAudit(report); } catch (e) { report.crossPage = { error: String(e.message || e) }; }
+const findingIndex = annotateFindings(report);
 writeFileSync(join(dir, 'findings.json'), JSON.stringify(report, null, 2));
+writeFileSync(join(dir, 'finding-index.json'), JSON.stringify({ schemaVersion: 1, provider: 'website-qa', generatedAt: report.generatedAt, findings: findingIndex }, null, 2));
 let visionManifests = [];
 if (doVision) {
   visionManifests = report.urls.map(e => ({ url: e.url, dir: e.dir, images: visionManifest(e) }));
@@ -869,6 +873,7 @@ const auditManifest = {
   },
   artifacts: {
     findings: 'findings.json',
+    findingIndex: 'finding-index.json',
     summary: 'summary.md',
     regressions: regressionDiff ? 'regressions.json' : null,
     visionManifest: doVision ? 'vision-manifest.json' : null,

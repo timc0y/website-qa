@@ -3,14 +3,8 @@
 Build timestamped side-by-side (Figma | Rendered) comparison images per section for a
 breakpoint, plus an index.html contact sheet.
 
-PAIRING. Pass `--map figma-map.json` and pairs are resolved by section NAME, in
-map order, against each section's declared Figma node. This is the correct mode:
-pairing is explicit and a mismatch is impossible.
-
-Without `--map` it falls back to matching the two-digit index in the filename,
-which pairs `02-nav.png` with `02-trust-bar.png` and produces a nonsense sheet
-WITHOUT ERRORING. The fallback warns; treat that warning as a defect in the run,
-not as noise.
+PAIRING. `--map figma-map.json` is required. Pairs resolve by section NAME, in
+map order, against each section's declared Figma node.
 
 Also writes `pairs.json` recording exactly what was paired with what, so the
 manifest builder and any later audit can see the mapping rather than infer it.
@@ -24,7 +18,7 @@ Usage:
     --breakpoint desktop-1512 --out ./review [--viewport 1512x982] \
     [--col-width 900] [--timestamp 2026-07-24_154210]
 """
-import argparse, os, re, glob, html, json, sys
+import argparse, os, re, glob, html, json
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 
@@ -35,11 +29,6 @@ BG = (17, 24, 39)
 PANEL = (255, 255, 255)
 FG = (236, 239, 244)
 SUB = (150, 160, 175)
-
-
-def idx_of(path):
-    m = re.search(r'(\d{2,3})', os.path.basename(path))
-    return m.group(1) if m else None
 
 
 def label_of(path):
@@ -132,29 +121,14 @@ def plan_from_map(map_path, figma_dir, live_dir, label, route=None):
     return plan
 
 
-def plan_from_index(figma_dir, live_dir):
-    """Fallback: pair on the filename index. Can mispair silently -- warns."""
-    figs = {idx_of(p): p for p in sorted(glob.glob(os.path.join(figma_dir, '*.png'))) if idx_of(p)}
-    lives = {idx_of(p): p for p in sorted(glob.glob(os.path.join(live_dir, '*.png'))) if idx_of(p)}
-    plan = []
-    for k in sorted(set(figs) | set(lives), key=lambda k: int(k)):
-        fp, lp = figs.get(k), lives.get(k)
-        fname, lname = label_of(fp) if fp else None, label_of(lp) if lp else None
-        if fp and lp and fname != lname:
-            print(f'  !! index {k} pairs "{fname}" with "{lname}" -- names disagree, '
-                  f'this pair is probably wrong. Use --map.', file=sys.stderr)
-        plan.append({'key': k, 'name': fname or lname, 'node': None, 'figma': fp, 'live': lp})
-    return plan
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--figma-dir', required=True)
     ap.add_argument('--live-dir', required=True)
     ap.add_argument('--breakpoint', required=True)
     ap.add_argument('--out', required=True)
-    ap.add_argument('--map', default=None,
-                    help='project figma-map.json; pairs by section name (recommended)')
+    ap.add_argument('--map', required=True,
+                    help='project figma-map.json; pairs by section name')
     ap.add_argument('--label', default=None,
                     help='live filename suffix, e.g. desktop for 01-hero-desktop.png')
     ap.add_argument('--route', default=None,
@@ -168,14 +142,8 @@ def main():
     run_dir = os.path.join(args.out, f'{ts}_{args.breakpoint}')
     os.makedirs(run_dir, exist_ok=True)
 
-    if args.map:
-        plan = plan_from_map(args.map, args.figma_dir, args.live_dir, args.label, args.route)
-        pairing = 'explicit (figma-map.json section names)'
-    else:
-        print('WARNING pairing by filename index -- this can pair unrelated sections '
-              'without erroring. Pass --map figma-map.json.', file=sys.stderr)
-        plan = plan_from_index(args.figma_dir, args.live_dir)
-        pairing = 'inferred (filename index) -- UNSAFE'
+    plan = plan_from_map(args.map, args.figma_dir, args.live_dir, args.label, args.route)
+    pairing = 'explicit (figma-map.json section names)'
 
     rows = []
     for item in plan:

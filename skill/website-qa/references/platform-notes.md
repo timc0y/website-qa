@@ -147,5 +147,5 @@ site. Platform signatures add checks when present; they do not define the skill'
 scope. Examples include stock Webflow form copy and rich-text demo content,
 builder badges, CMS empty bindings, AOS attributes, Swiper classes, and Tailwind
 or Radix state attributes. On Astro and other static-first frameworks, the final
-DOM is usually plain HTML; customize `--selectors` only for bespoke components
+DOM is usually plain HTML; provide `--vocabulary` only for bespoke components
 whose state cannot be inferred from semantics or conventional class names.

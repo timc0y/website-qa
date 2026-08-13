@@ -9,12 +9,27 @@ description: >-
 
 # Figma parity
 
-Compare a built page with its exact Figma source. Use measurements and paired
-images, then explain the differences in plain English. A similarity score alone
-is not enough.
+Determine whether a rendered selection matches its approved design under
+equivalent, evidenced conditions. Use measurements and paired images, then
+explain differences in plain English. A similarity score alone is not enough.
 
 Use `website-qa` separately when the user also wants broken links, forms,
 accessibility, SEO, console errors or general website defects.
+
+Use the shared operating shape: `boundary → contract → selection → profile → execution → evidence → outcome → replay`.
+
+## Contract and selection
+
+Bind every comparison to an exact live selection, Figma file and node, declared
+canonical canvas or version, route, width, state, theme, locale, content or data
+case, capture method, and deployment identifier when available. Record the full
+denominator before sampling.
+
+Use `targeted` for one selection or reported difference, `standard` for the
+declared route and component set, `deep` for extra states and independent visual
+verification, and `launch` for every contract-required comparison with durable
+evidence. Profiles do not relax condition equivalence. Use
+[review-profiles.md](references/review-profiles.md) for exact minimums.
 
 ## Rules
 
@@ -33,6 +48,31 @@ accessibility, SEO, console errors or general website defects.
 7. Keep Figma mistakes separate from build mistakes. Use `designSourceDefects`
    for Figma, `findings` for the build and `docDrift` for stale project notes.
 8. Treat an unknown condition as unresolved. Do not turn it into a pass.
+9. **Use this skill's own scripts and protocols, not a faster ad-hoc read.**
+   Naming the goal ("check this page against Figma") is not enough — a dispatched
+   check under time pressure will reach for the nearest tool instead of finding
+   `capture.mjs`, `compose_review.py`, or `website-qa`'s `vision-qa.md` tile
+   protocol on its own. Name the actual script or protocol to run.
+10. **Never run more than one concurrent check against a shared interactive
+    browser session.** `capture.mjs` launches its own isolated browser per
+    invocation and is the only safe choice once multiple checks may run at once.
+    If an interactive browser is unavoidable, each concurrent check claims its
+    own tab before navigating and re-verifies `location.href` before every
+    measurement — the shared/default tab will get hijacked by another check's
+    navigation otherwise.
+11. **A frame missing under the expected name is not a missing spec.** Search
+    the whole canvas for a plausibly-sized frame with matching content before
+    concluding no design reference exists. Only fall back to a fresh-eyes,
+    no-reference judgement after that search comes up empty.
+12. **A node ID from project docs is a hypothesis until re-fetched.** When a
+    project's Figma file holds more than one canvas copy, use
+    `authority.canonicalCanvas` and confirm any pre-recorded ID resolves there
+    before citing it. If the map declares no authority, record that as a blocker
+    or design-source ambiguity rather than inventing one.
+13. **Instance-sampling covers build defects, never content or data.** Checking
+    one representative instance of a shared component is correct for CSS/layout.
+    A data or content error can exist on one instance only — sample every real
+    instance for those, or say plainly that you sampled.
 
 ## Choose how to run it
 
@@ -191,9 +231,8 @@ node scripts/build_manifest.mjs --run <run-dir> --map figma-map.json \
 node scripts/validate_manifest.mjs <run-dir>/figma-parity-manifest.json
 ```
 
-The validator rejects legacy v1–v3 self-certifying manifests by default. Use
-`--allow-legacy` only to inspect or migrate an old packet; it cannot satisfy a
-delivery QA gate.
+Only the observation-only v4 manifest is supported. Regenerate any other
+version; conclusion fields are not accepted.
 
 The generated manifest contains observations only. It must never claim that an
 image was inspected or that it matches. After inspection, create and validate a
@@ -243,7 +282,17 @@ raw number of changed pixels.
 - Figma problems, build problems and stale notes are kept separate; and
 - the report and manifest pass their checks.
 
+Return `passed`, `findings`, `partial`, `blocked`, or `failed`. A pass requires
+equivalent conditions and valid inspected evidence for every required comparison.
+To verify a fix, replay the frozen plan rather than re-inferring nodes, states, or
+content.
+
 Read [known-blind-spots-2026-08-07.md](references/known-blind-spots-2026-08-07.md)
-when changing this skill. It records the failures that led to the checks for
-section joins, complete control testing, comments, outside references and
-deleted requirements.
+and [known-blind-spots-2026-08-12.md](references/known-blind-spots-2026-08-12.md)
+when changing this skill, or when dispatching multiple concurrent checks. The
+first records the failures that led to the checks for section joins, complete
+control testing, comments, outside references and deleted requirements. The
+second records why dispatched checks skipped this skill's own tooling, hijacked
+each other's shared browser tab, gave up at a missing frame name, trusted a
+stale node ID, and let instance-sampling hide a content error — rules 9 to 13
+above exist because of it.

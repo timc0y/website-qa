@@ -4,7 +4,6 @@ import path from "node:path";
 import crypto from "node:crypto";
 
 const cliArgs = process.argv.slice(2);
-const allowLegacy = cliArgs.includes("--allow-legacy");
 const file = path.resolve(cliArgs.find((value) => !value.startsWith("--")) || "figma-parity-manifest.json");
 const root = path.dirname(file);
 const errors = [];
@@ -25,20 +24,7 @@ const localFile = (candidate, label) => {
 };
 const digest = (candidate) => crypto.createHash("sha256").update(fs.readFileSync(candidate)).digest("hex");
 
-// Additive versions must not break older consumers (Parallax imports this packet),
-// so accept any known version and only warn about a newer one.
-const KNOWN_VERSIONS = [1, 2, 3, 4];
-if (!KNOWN_VERSIONS.includes(packet.schemaVersion)) {
-  if (Number.isInteger(packet.schemaVersion) && packet.schemaVersion > Math.max(...KNOWN_VERSIONS)) {
-    warnings.push(`schemaVersion ${packet.schemaVersion} is newer than this validator knows (${KNOWN_VERSIONS.join(", ")}); additive fields are ignored`);
-  } else {
-    errors.push(`schemaVersion must be one of ${KNOWN_VERSIONS.join(", ")}`);
-  }
-}
-if ([1, 2, 3].includes(packet.schemaVersion)) {
-  if (allowLegacy) warnings.push(`legacy schemaVersion ${packet.schemaVersion} is parseable but its generated inspection/confidence fields are not trusted`);
-  else errors.push(`legacy schemaVersion ${packet.schemaVersion} cannot be validated as trustworthy; regenerate an observation-only v4 manifest`);
-}
+if (packet.schemaVersion !== 4) errors.push("schemaVersion must be 4");
 if (packet.provider !== "figma-parity") errors.push("provider must be figma-parity");
 required(packet.generatedAt, "generatedAt");
 if (Number.isNaN(new Date(packet.generatedAt).valueOf())) errors.push("generatedAt must be a timestamp");
@@ -52,13 +38,12 @@ else for (const [name, enabled] of Object.entries(packet.execution.capabilities)
 const requested = packet.coverage?.requested;
 const compared = packet.coverage?.compared;
 const missing = packet.coverage?.missing;
-// coveredViaComponent is additive (schemaVersion 3); a version-2 packet has none.
 const coveredViaComponent = packet.coverage?.coveredViaComponent || [];
 if (![requested, compared, missing].every(Array.isArray)) errors.push("coverage requested, compared, and missing must be arrays");
 else if (!Array.isArray(coveredViaComponent)) errors.push("coverage.coveredViaComponent must be an array when present");
 else {
   const wanted = new Set(requested.map(cellKey));
-  const accounted = [...compared, ...missing, ...(packet.schemaVersion < 4 ? coveredViaComponent : [])].map(cellKey);
+  const accounted = [...compared, ...missing].map(cellKey);
   if (new Set(accounted).size !== accounted.length) errors.push("coverage cells must be accounted for exactly once");
   for (const key of wanted) if (!accounted.includes(key)) errors.push(`requested coverage cell is unaccounted: ${key.replaceAll("\0", " / ")}`);
   for (const key of accounted) if (!wanted.has(key)) errors.push(`accounted coverage cell was not requested: ${key.replaceAll("\0", " / ")}`);
@@ -67,11 +52,9 @@ else {
     required(cell.coveredVia, `coverage.coveredViaComponent ${cellKey(cell)} coveredVia`);
     required(cell.componentId, `coverage.coveredViaComponent ${cellKey(cell)} componentId`);
   }
-  if (packet.schemaVersion === 4) {
-    for (const cell of coveredViaComponent) {
-      if (!missing.some((entry) => cellKey(entry) === cellKey(cell))) {
-        errors.push(`coverage.coveredViaComponent is an annotation and cannot satisfy schemaVersion 4 cell: ${cellKey(cell).replaceAll("\0", " / ")}`);
-      }
+  for (const cell of coveredViaComponent) {
+    if (!missing.some((entry) => cellKey(entry) === cellKey(cell))) {
+      errors.push(`coverage.coveredViaComponent is an annotation and cannot satisfy a cell: ${cellKey(cell).replaceAll("\0", " / ")}`);
     }
   }
 }
@@ -120,28 +103,12 @@ for (const [index, item] of packet.evidence.entries()) {
   localFile(item.comparison?.sideBySidePath, `${label}.comparison.sideBySidePath`);
   localFile(item.comparison?.diffPath, `${label}.comparison.diffPath`);
   localFile(item.comparison?.metricsPath, `${label}.comparison.metricsPath`);
-  if (packet.schemaVersion === 4) {
-    if (Object.hasOwn(item, "inspected")) errors.push(`${label}.inspected is an attestation and must not appear in an observation manifest`);
-    if (Object.hasOwn(item, "confidence")) errors.push(`${label}.confidence is a conclusion and must not appear in an observation manifest`);
-  } else {
-    if (typeof item.inspected !== "boolean") errors.push(`${label}.inspected must be boolean`);
-    if (!["verified", "visual-only", "suspected"].includes(item.confidence)) errors.push(`${label}.confidence is invalid`);
-  }
-
-  // Retain strict validation for legacy packets without endorsing their model.
-  if (packet.schemaVersion < 4 && item.confidence === "verified") {
-    if (item.live?.observedContentWidth === null) errors.push(`${label} is verified but live.observedContentWidth is unknown; horizontal measurement cannot be verified`);
-    else if (Number.isInteger(item.live?.observedContentWidth) && item.live.observedContentWidth !== item.breakpoint) {
-      errors.push(`${label} is verified but content width was ${item.live.observedContentWidth}px against breakpoint ${item.breakpoint}px`);
-    }
-    if (!item.limitations?.length && packet.target?.stable === false) {
-      errors.push(`${label} is verified while target.stable is false and it lists no limitation`);
-    }
-  }
+  if (Object.hasOwn(item, "inspected")) errors.push(`${label}.inspected is not part of the observation contract`);
+  if (Object.hasOwn(item, "confidence")) errors.push(`${label}.confidence is not part of the observation contract`);
 }
 }
-if (packet.schemaVersion === 4 && packet.execution?.capabilities?.visualComparison === true) {
-  errors.push("execution.capabilities.visualComparison cannot be true in an observation-only manifest; cite a valid review attestation separately");
+if (packet.execution?.capabilities?.visualComparison === true) {
+  errors.push("execution.capabilities.visualComparison cannot be true in an observation manifest; cite a valid review attestation separately");
 }
 
 // Findings, when present, must carry an owner. `both` exists for the case where
@@ -153,8 +120,8 @@ for (const key of ["findings", "designSourceDefects"]) {
     required(finding.summary, `${key}[${index}].summary`);
     if (!["high", "medium", "low", "motion"].includes(finding.severity)) errors.push(`${key}[${index}].severity is invalid`);
     if (!["build", "design", "both", "content"].includes(finding.owner)) errors.push(`${key}[${index}].owner is invalid`);
-    if (packet.schemaVersion === 4 && Object.hasOwn(finding, "confidence")) {
-      errors.push(`${key}[${index}].confidence is a conclusion and must be recorded through a review attestation`);
+    if (Object.hasOwn(finding, "confidence")) {
+      errors.push(`${key}[${index}].confidence is not part of the observation contract; record conclusions through a review attestation`);
     }
     for (const id of finding.evidenceIds || []) {
       if (!packet.evidence?.some((e) => e.id === id)) errors.push(`${key}[${index}] cites unknown evidence id: ${id}`);

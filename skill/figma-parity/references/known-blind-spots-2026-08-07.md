@@ -1,5 +1,10 @@
 # Known blind spots from an anonymised review cross-check
 
+See also [known-blind-spots-2026-08-12.md](known-blind-spots-2026-08-12.md) — a
+later note about dispatched checks skipping this skill's own tooling and
+hijacking each other's shared browser tab. Different failure class, same
+project's ongoing sweep.
+
 This note distils an internal comparison between a parity run and a human bug
 list. Client, people, project, route, issue, Figma, and reference-site identifiers
 have been removed. The durable value is the five failure shapes and the workflow

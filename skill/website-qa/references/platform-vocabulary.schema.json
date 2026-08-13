@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "website-qa platform vocabulary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "selectors"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "selectors": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "publicSignatures": {
+      "type": "object",
+      "description": "Optional served-output signatures for external attribution; never private tool knowledge.",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    }
+  }
+}
