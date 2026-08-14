@@ -1,0 +1,4 @@
+interface:
+  display_name: "Engine Behaviour"
+  short_description: "Explain browser and device-specific website faults"
+  default_prompt: "Use $engine-behaviour to explain the engine, device, or power-state cause of this website symptom and suggest a safer implementation."
