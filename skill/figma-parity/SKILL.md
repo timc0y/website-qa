@@ -15,6 +15,18 @@ insufficient. Use `website-qa` separately for general website defects.
 
 Use `boundary → contract → selection → profile → execution → evidence → outcome → replay`.
 
+## What a comparison can and cannot tell you
+
+A design file speaks for one person — the visitor — and is silent about the two
+who arrive later. A build can match its design exactly and still leave an editor
+unable to change it, or a developer unable to extend it without a rebuild.
+
+So a difference from the design is not automatically a defect, and a match is not
+automatically success. Where a build departs from its design to stay editable or
+maintainable, that is a decision someone made; report it as a difference with its
+likely reason, not as a failure. The person who owns the design and the person who
+owns the build are answering different questions.
+
 ## Contract and profile
 
 Bind each comparison to exact live selection, Figma file/node, declared canonical

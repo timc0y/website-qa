@@ -352,6 +352,12 @@ for (const r of rules) {
     const depth = part.split(/\s+|>/).filter(Boolean).length;
     if (depth >= 5) add('deepDescendantSelector', { selector: part, depth,
       suggestion: 'Depth ≥5 couples CSS to DOM shape; a single class on the target is more durable.' });
+    // `:has()` reasoning about a sibling or descendant's presence/position is doing structural
+    // work in CSS that a reorder or a markup change breaks silently — no build error, just a
+    // rule that stops matching. It is a legitimate tool, not a defect by itself; flag it as a
+    // fragility lead so a reviewer checks whether an explicit modifier class would be sturdier.
+    if (/:has\(/.test(part)) add('hasSelectorCoupling', { selector: part,
+      suggestion: 'Depends on sibling/descendant DOM structure through :has(); a reorder or a markup edit can silently stop it matching. Consider an explicit modifier class or attribute if this styling is load-bearing.' });
   }
 }
 const impBySheet = {};

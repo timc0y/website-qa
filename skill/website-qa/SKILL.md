@@ -2,9 +2,10 @@
 name: website-qa
 description: >-
   Check a live, preview or local website for visual, responsive, interaction,
-  link, form, accessibility, SEO, console, network and browser problems. Use
-  when reviewing a build or looking for regressions without comparing it with
-  Figma. Works with Webflow and other rendered websites.
+  link, form, accessibility, SEO, AEO, semantic heading/title, console, network
+  and browser problems. Use when reviewing a build or looking for regressions
+  without comparing it with Figma. Works with Webflow and other rendered
+  websites.
 ---
 
 # Website QA
@@ -24,6 +25,29 @@ The runner never discovers installed skills/private tools. Stable `wqa:` finding
 IDs may receive privileged attribution only through a separate sidecar validated
 by `scripts/validate_attribution.mjs` and
 [finding-attribution.schema.json](references/finding-attribution.schema.json).
+
+## Who a finding is for
+
+A site serves three people, and a review is only useful when a finding names
+which of them a fault reaches:
+
+- **The visitor** never sees the build. Their failure is silent — content that
+  needs JavaScript to appear, a control that cannot be reached by keyboard, a
+  layout that breaks on a real phone. Nobody reports it; they leave.
+- **The editor** maintains the site afterwards. Their failure is a field or
+  control whose purpose cannot be guessed, so they stop changing things.
+- **The developer** inherits it. Their failure is two sources that both look
+  authoritative, or a name that turns out to be load-bearing.
+
+**A measurement means nothing until a person is attached to it.** "41 images
+without alt text" is a fact; "41 images without alt text on a page a screen-reader
+user is expected to complete a form on" is a finding. Report the count and the
+consequence together, and where a gap costs nobody, say so and move on rather
+than padding the report.
+
+The same applies in reverse: a build can be structurally clean and still unfit to
+publish, or well-written and full of placeholder copy. State which you assessed
+and which you did not.
 
 ## Contract and profile
 
@@ -98,11 +122,26 @@ reviewed project's approved private folder. Reuse output roots for comparison.
 7. **Expand shared changes:** include every route using a changed component.
 8. **Group causes:** repeated symptoms from one rule are one problem.
 9. **Report:** use [report-template.md](references/report-template.md); separate
-   defects, polish, content, accessibility/SEO, browser differences, and tool noise.
+   defects, polish, content, accessibility/SEO/AEO, browser differences, and tool noise.
 
 The runner covers layout, content/setup, accessibility, controls, non-submitting
 form checks, requests/console/fonts/images/layout movement, visual evidence,
 run-to-run regressions, and cross-page template differences.
+
+`audit_a11y_seo.js` also checks, per page: **heading hierarchy** (missing or
+duplicate `<h1>`, skipped levels — what a screen reader's or crawler's outline
+sees, not what looks right visually); **title-tag semantics** (a title can pass
+the existing length check and still be a generic template default or share no
+words with the page's own `<h1>` — heuristic, report as SUSPECTED, confirm by
+eye); **heading/paragraph semantic mismatch** in both directions (large bold
+text in a `<p>`/`<div>`/`<span>` that reads as a heading but isn't tagged as
+one, and an `<h1>`-`<h6>` restyled down to body size with no visual hierarchy
+left); and **AEO** — whether a question-phrased heading is followed by a short
+direct answer rather than a long run-up, whether FAQ/HowTo/Article structured
+data specifically is present (not just any JSON-LD block), and whether the site
+has published an `llms.txt` (informational only; its absence is not a defect).
+Fold these into the same accessibility/SEO section of the report, not a
+separate pass — they run in every `audit_a11y_seo.js` invocation already.
 
 For browser/platform interpretation read
 [platform-notes.md](references/platform-notes.md). Before CSS-quality findings,

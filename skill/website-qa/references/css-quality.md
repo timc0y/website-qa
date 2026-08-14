@@ -40,6 +40,7 @@ in which case it belongs in the defect section with that evidence, not here.
 | `unusedCustomProperty` | **low** | see the caveat below. |
 | `valueSprawl` | low | a count, not a defect. Useful as a headline ("34 distinct font sizes"), useless as a ticket. |
 | `deepDescendantSelector` | low | depth ≥5 couples CSS to DOM shape. Sometimes unavoidable. |
+| `hasSelectorCoupling` | low | a `:has()` clause makes styling depend on a sibling or descendant's presence or position. Real found example: a featured-card layout keyed on DOM position via `:has()` — reorder the cards or change the markup and the rule silently stops matching, no build error. Not a defect by itself; flag it as a fragility lead and ask whether an explicit modifier class would survive a reorder better. |
 | `importantHotspot` | medium | `!important` in bulk means a specificity fight; the *losing* selector is the real bug. |
 
 ## The traps, all of which produced wrong output while building this
