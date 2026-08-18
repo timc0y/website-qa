@@ -1,23 +1,28 @@
-# Simple profile
+# Simple
 
 ## Reality
 
-- Users: agents and maintainers independently reviewing rendered websites or comparing them with exact Figma evidence.
-- Operators: Tim maintains the `website-qa` and `figma-parity` skills and their detectors/contracts.
-- External consumers: Codex/Claude skill installations, Parallax evidence imports and optional Forge captures.
-- Public contracts: skill instructions, evidence manifests, detector output and disclosure-safe packaging.
-- Persistent production data: none; captures and review evidence belong to the inspected project.
-- Compatibility obligations: keep both skills independently usable and avoid leaking private tooling names into public artifacts.
-- Current scale and failure consequences: public review skills; weak evidence or contract drift produces false QA confidence.
+- Users and external installs: Unknown.
+- External surface: Disclosure-controlled repository containing independently installable `website-qa`, `figma-parity`, and `engine-behaviour` skills with Playwright utilities. Public-facing intent is proven; npm publication is not.
+- Persistent data: None; captures and evidence belong to the inspected project.
+- Compatibility: Preserve independent installation, manifests, provider provenance, current-schema validation, and disclosure safety.
 
-## Architecture boundary
+## Preserve
 
-`website-qa` proves defects from rendered reality; `figma-parity` proves mismatch against supplied Figma nodes. Parallax may organise their evidence but is not required for either skill.
+- Artifact-only interoperability and the rule that neither QA skill claims evidence it did not inspect.
 
-## Deletion proof
+## Current boundary
 
-- Dead code: trace detectors, extension points, manifests and both installed skill copies.
-- Types or compiler: script parsing is covered by the test suite.
-- Behaviour: `npm test` and the focused detector/parity test groups.
-- Build: run contract, disclosure, manifest and skill-document checks.
-- Public surface: install each skill independently and validate representative evidence output.
+- `website-qa` evaluates rendered-site defects; `figma-parity` compares supplied Figma evidence. Neither requires or proves Parallax/Forge use.
+
+## Ordinary paths
+
+- Run either skill directly; use `npm run sync:skills` for local harness links and keep each skill's tests/contracts with its owner.
+
+## Proof
+
+- `npm test`, including disclosure, manifest, detector, regression, and parity suites.
+
+## Reconsider when
+
+- Both skills need the same evidence contract and can share it without coupling their independent installation.
