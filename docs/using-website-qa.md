@@ -13,7 +13,8 @@ npx playwright install chromium webkit    # ~1 GB into the Playwright browser ca
 ```
 
 Node 18 or newer. Chromium alone is enough to start; WebKit is needed for
-`--engines=chromium,webkit`.
+`--engines=chromium,webkit`. `website-qa` needs nothing else — no API key, no account, no
+design tool. (A Figma read path is a `figma-parity` requirement, not this one.)
 
 No install is needed to use the audits interactively: every file in
 `skill/website-qa/scripts/` is a self-contained IIFE that can be pasted into a browser

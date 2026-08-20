@@ -6,7 +6,7 @@ one question on its own and never claims evidence it did not inspect.
 | Skill | Question it answers | Needs |
 |---|---|---|
 | [`website-qa`](skill/website-qa/SKILL.md) | Is this website broken? | a URL |
-| [`figma-parity`](skill/figma-parity/SKILL.md) | Does it match these Figma nodes? | a URL and specific Figma nodes |
+| [`figma-parity`](skill/figma-parity/SKILL.md) | Does it match these Figma nodes? | a URL, specific Figma nodes, and a Figma read path (Framelink) |
 | [`engine-behaviour`](skill/engine-behaviour/SKILL.md) | Why does this engine, device or power state cause this symptom? | a symptom |
 
 They work on any rendered site — Webflow, Framer, Shopify, Next, Astro, hand-written
@@ -24,10 +24,11 @@ add candidates, never override what shape analysis found.
 | | |
 |---|---|
 | Node | 18 or newer (ESM, `structuredClone`). Developed and tested on Node 26. |
-| Dependency | `playwright` 1.62.1 — the only runtime dependency, pinned. |
+| Dependency | `playwright` 1.62.1 — the only npm dependency, pinned. |
 | Browsers | Chromium required; WebKit for the cross-engine pass. `npx playwright install chromium webkit` downloads ~1 GB into the Playwright cache. |
 | OS | macOS, Linux or Windows. Nothing platform-specific in the checks. |
 | Network | Outbound access to the site under review. Nothing is uploaded anywhere. |
+| Figma read path | `figma-parity` only. It needs a tool that can read a Figma file — Framelink's Figma MCP (`get_figma_data`, `download_figma_images`) is the one it is used with, and it needs a Figma access token of its own. Not an npm dependency of this repository: no code here imports it, and `website-qa` does not need it at all. |
 | Chromium-only | `--why-css` (CSS attribution) uses the debugger protocol. Absent elsewhere, and stated as a limitation rather than skipped silently. |
 
 Interactive use needs no install at all: every file in `skill/website-qa/scripts/` is a
