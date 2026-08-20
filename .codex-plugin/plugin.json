@@ -1,0 +1,36 @@
+{
+  "name": "website-quality",
+  "version": "1.0.0",
+  "description": "Evidence-led website QA: find layout, responsive, accessibility, metadata and runtime defects on any rendered site, compare a build with specific Figma nodes, and explain engine-specific symptoms.",
+  "author": {
+    "name": "Tim Coy",
+    "url": "https://github.com/timc0y"
+  },
+  "repository": "https://github.com/timc0y/website-qa",
+  "license": "MIT",
+  "keywords": [
+    "website-qa",
+    "visual-regression",
+    "accessibility",
+    "responsive",
+    "figma-parity",
+    "agent-skill"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Website Quality",
+    "shortDescription": "Find what is broken on a rendered site, and what the next edit will break",
+    "longDescription": "Drives a real browser across every breakpoint and every width between them, measuring geometry, fit, collisions and headroom; predicts what a longer word, a missing image or 200% text zoom would break; names the CSS declaration responsible; and reports each finding with the evidence class that earned it. Works on any rendered site — platform knowledge is optional and additive.",
+    "developerName": "Tim Coy",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "QA this URL and tell me what a visitor loses",
+      "Does this layout break at any width between the breakpoints?",
+      "What will break the next time an editor changes this page?",
+      "Compare this page with its Figma nodes at 1512 and 393"
+    ]
+  }
+}

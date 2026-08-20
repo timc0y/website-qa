@@ -61,11 +61,15 @@ one skill elsewhere, copy its complete folder from `skills/`.
 
 ### As a plugin
 
-The repository carries `.claude-plugin/plugin.json` and a `commands/` entry per skill, so a
-Claude Code plugin install from this git URL picks up all three skills plus `/website-qa`,
-`/figma-parity` and `/engine-behaviour`. The skills live in `skills/<name>/` — the layout a
-plugin expects — so there is **one** copy of each: the plugin and `sync:skills` point at the
-same folders and cannot drift. No marketplace entry is published yet.
+The repository carries `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json` and a
+`commands/` entry per skill, so a plugin install from this git URL picks up all three skills
+plus `/website-qa`, `/figma-parity` and `/engine-behaviour`. Both manifests point at
+`skills/<name>/`, the same folders `sync:skills` links — **one** copy of each skill, so the
+plugin and the linked install cannot drift. No marketplace entry is published yet.
+
+Installing the plugin *and* running `sync:skills` on the same machine would register each
+skill twice. Pick one: `sync:skills` for your own machine, the plugin for distributing to
+someone else's.
 
 ## How `website-qa` works
 
