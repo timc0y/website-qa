@@ -441,7 +441,7 @@ for (const url of urls) {
     const step = async (name, fn) => { try { entry.interactions[name] = await fn(); }
       catch (e) { entry.interactions[name] = { error: String(e.message || e).slice(0, 120) }; } };
     await step('hover', () => hoverAudit(page, { vocab }));
-    await step('openStates', () => openStateAudit(page, { layoutSrc: LAYOUT, shotDir: shots, vocab }));
+    await step('openStates', () => openStateAudit(page, { measure: measureLayout, shotDir: shots, vocab }));
     await step('navExclusivity', () => dropdownExclusivity(page, { vocab }));
     // reloads the page once per button, so it goes after the cheap passes
     if (!flag('no-cta-clicks')) await step('ctaClicks', () => ctaClickAudit(page, { url, vocab }));
@@ -460,7 +460,7 @@ for (const url of urls) {
     const mstep = async (name, fn) => { try { entry.interactions.mobile[name] = await fn(); }
       catch (e) { entry.interactions.mobile[name] = { error: String(e.message || e).slice(0, 120) }; } };
     const mshots = join(dir, 'states-mobile'); mkdirSync(mshots, { recursive: true });
-    await mstep('openStates', () => openStateAudit(page, { layoutSrc: LAYOUT, shotDir: mshots, prefix: 'm-', vocab }));
+    await mstep('openStates', () => openStateAudit(page, { measure: measureLayout, shotDir: mshots, prefix: 'm-', vocab }));
     // Open-state probes intentionally leave their last panel visible for its state
     // screenshot. Reload before scrolling so a mobile menu's overflow:hidden lock
     // cannot turn a full-page scroll audit into a zero-step false failure.

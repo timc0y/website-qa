@@ -194,7 +194,14 @@ export async function hoverAudit(page, { max = 26, vocab = DEFAULT_VOCAB } = {})
  * off the right edge, a dropdown painted BEHIND the next section, a toggle that
  * does nothing at all, lorem inside a panel nobody opened during review.
  */
-export async function openStateAudit(page, { layoutSrc, shotDir, prefix = '', max = 14, vocab = DEFAULT_VOCAB } = {}) {
+/* `measure` is the runner's single measurement owner, passed in rather than a script
+ * source. Taking `layoutSrc` and evaluating it here was a second measurement path, and a
+ * measurably weaker one: it skipped the role pass, so open-state readings fell back to
+ * class-name matching — the very thing that reported a carousel section as 1865px of
+ * clipped copy — skipped the fit measurements entirely, and was never measured twice, so
+ * nothing here could be labelled timing-dependent. Open panels are exactly where
+ * collisions live; they deserve the same evidence as the resting page, not less. */
+export async function openStateAudit(page, { measure, shotDir, prefix = '', max = 14, vocab = DEFAULT_VOCAB } = {}) {
   await inject(page);
   const toggles = await page.evaluate(({ MAX, SEL, IGNORE }) => {
     // A link that navigates is not a toggle. Class-substring matching happily picks
@@ -313,10 +320,12 @@ export async function openStateAudit(page, { layoutSrc, shotDir, prefix = '', ma
       if (revealed.count) {
         // audit the revealed DOM with the normal layout rules — overflow and 0×0
         // collapse inside a dropdown are just as real as on the page body
-        if (layoutSrc) {
-          try { const L = await page.evaluate(`(0, eval)(${JSON.stringify(layoutSrc)})`);
+        if (measure) {
+          try { const L = await measure(page);
             state.layout = { overflow: L.horizontalOverflow?.offenders?.length || 0,
               collapsed: L.collapsedElements?.length || 0, wrapping: L.unintendedWrapping?.length || 0,
+              escapesParent: L.escapesParent?.length || 0, covering: L.overlappingContent?.length || 0,
+              textCollisions: L.textCollisions?.length || 0, cannotFit: L.textCannotFit?.length || 0,
               scrollsSideways: !!L.horizontalOverflow?.pageScrollsSideways }; } catch (e) {}
         }
         if (shotDir) { const safe = (prefix + t.el).replace(/[^\w.-]+/g, '_').slice(0, 60);

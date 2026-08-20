@@ -302,6 +302,114 @@ const assert = (name, cond, detail = '') => {
     alone === true && noRoles.escapesParent.length >= 1, JSON.stringify(noRoles.escapesParent).slice(0, 120));
 }
 
+/* ── perturb / impact / attribution ──────────────────────────────────────────────
+ * These three shipped with no test at all, which is worth stating plainly: the commit that
+ * added them claimed proof it had not delivered. Each is now asserted on the property that
+ * makes it trustworthy rather than on its output shape.
+ */
+{
+  const { PERTURBATIONS, perturbationSweep } = await import('../runner/lib/perturb.mjs');
+  const { rankByImpact } = await import('../runner/lib/impact.mjs');
+  const { attributeFindings } = await import('../runner/lib/attribution.mjs');
+  const LAYOUT_SRC = script('audit_layout.js');
+  const SLACK_SRC = script('audit_slack.js');
+  const ROLES_SRC = script('audit_roles.js');
+
+  /* One page, two boxes: one with room to spare, one two characters from the edge. A
+   * perturbation that reports the roomy box has told us nothing; one that reports only the
+   * tight box has told us what the next edit does. */
+  const PAGE = `<!doctype html><html><body style="margin:0">
+    <div class="roomy" style="width:600px;font:16px/1.2 monospace">Get a quote now</div>
+    <div class="tight" style="width:162px;font:16px/1.2 monospace;white-space:nowrap">Get a quote now</div>
+  </body></html>`;
+  const measure = async p => {
+    await p.evaluate(ROLES_SRC);
+    const out = await p.evaluate(LAYOUT_SRC);
+    Object.assign(out, await p.evaluate(SLACK_SRC));
+    return out;
+  };
+  const reload = async () => { await page.setContent(PAGE); await page.waitForTimeout(60); };
+
+  await reload();
+  const swept = await perturbationSweep(page, { widths: [1512], measure, reload,
+    only: ['longWord'], settle: () => page.waitForTimeout(40) });
+  const hitTight = swept.findings.some(f => /tight/.test(String(f.el)));
+  const hitRoomy = swept.findings.some(f => /roomy/.test(String(f.el)));
+  assert('perturbation reports the box a longer word breaks, and not the one with room',
+    hitTight && !hitRoomy, JSON.stringify(swept.findings.map(f => f.el)));
+
+  /* And it must not claim credit for damage that was already there. */
+  await page.setContent(`<!doctype html><html><body style="margin:0">
+    <div style="width:80px;font:16px/1.2 monospace;white-space:nowrap">Already overflowing today</div>
+  </body></html>`);
+  const reloadBroken = async () => { await page.setContent(`<!doctype html><html><body style="margin:0">
+    <div style="width:80px;font:16px/1.2 monospace;white-space:nowrap">Already overflowing today</div>
+  </body></html>`); await page.waitForTimeout(60); };
+  const already = await perturbationSweep(page, { widths: [1512], measure, reload: reloadBroken,
+    only: ['longWord'], settle: () => page.waitForTimeout(40) });
+  assert('a defect present before the perturbation is not reported as caused by it',
+    already.findings.length === 0, JSON.stringify(already.findings.map(f => f.kind)));
+
+  assert('every perturbation declares the question it answers',
+    PERTURBATIONS.every(p2 => typeof p2.question === 'string' && p2.question.includes('?')));
+
+  /* Impact ranking: the two ways it went wrong on real output. */
+  {
+    const entry = { byBreakpoint: { 1512: {
+      imageIssues: [{ el: 'img.a', issue: 'still loading when audited — NOT a defect', severity: 'info' },
+                    { el: 'img.b', issue: 'broken — load finished with no intrinsic size' }],
+      escapesParent: [{ el: 'div.unstable', outcome: 'clipped', unstable: 'one of two readings' }]
+    }, 393: {
+      imageIssues: [{ el: 'img.b', issue: 'broken — load finished with no intrinsic size' }]
+    } },
+    once: { widthSweep: { findings: [
+      { kind: 'overlappingContent', what: 'div.stat', range: '992–1120px', stops: 5,
+        detail: { overlap: '20×30px', covers: 'div.stat' } },
+      { kind: 'escapesParent', what: 'div.ghost', range: '393px', stops: 1, transient: true,
+        detail: { el: 'div.ghost' } }
+    ] } } };
+    const ranked = rankByImpact(entry);
+    const kinds = ranked.top.map(r => `${r.kind}|${r.el}`);
+    assert('impact skips a finding the detector called info, and one it called unstable',
+      !kinds.some(k => /img\.a|div\.unstable/.test(k)), JSON.stringify(kinds));
+    assert('impact ranks a width-sweep finding, or "worst first" contradicts the sweep section',
+      kinds.some(k => k === 'overlappingContent|div.stat'), JSON.stringify(kinds));
+    assert('impact excludes a sweep finding that did not reproduce',
+      !kinds.some(k => /div\.ghost/.test(k)), JSON.stringify(kinds));
+    const img = ranked.top.find(r => r.el === 'img.b');
+    assert('the same defect at two widths is one row listing both widths',
+      img && img.widths.length === 2 && img.widths[0] === 393, JSON.stringify(img));
+  }
+
+  /* Attribution: it must name the declaration in effect after the cascade, and say when a
+   * selector matches more than one node rather than implying a single address. */
+  await page.setContent(`<!doctype html><html><head><style>
+    .card { max-width: 200px; overflow: hidden }
+    .card { max-width: 320px }
+  </style></head><body style="margin:0">
+    <div class="card">one</div><div class="card">two</div>
+    <p class="lonely" style="white-space:nowrap">solo</p>
+  </body></html>`);
+  await page.waitForTimeout(60);
+  {
+    const findings = [{ el: 'p.lonely' }, { el: 'div.card' }];
+    const res = await attributeFindings(page, findings);
+    if (!res.available) {
+      console.log(`⊘ attribution — CDP unavailable here (${res.why}); skipped`);
+    } else {
+      const card = findings[1].cause;
+      assert('attribution names the declaration that won the cascade, not the one it overrode',
+        card?.declarations?.some(d => d.property === 'max-width' && d.value === '320px'),
+        JSON.stringify(card?.declarations));
+      assert('attribution says when a selector matches several nodes',
+        card?.matchedNodes === 2 && res.ambiguous >= 1, JSON.stringify({ card, res }));
+      assert('attribution reads an inline declaration too',
+        findings[0].cause?.declarations?.some(d => d.selector === 'inline style' && d.property === 'white-space'),
+        JSON.stringify(findings[0].cause));
+    }
+  }
+}
+
 /* ── formAudit ────────────────────────────────────────────────────────────────
  * Needs its own case: it drives the page rather than evaluating a snapshot. Fixture-only by
  * necessity — the site this was written for has no form anywhere (every quote CTA lands on a

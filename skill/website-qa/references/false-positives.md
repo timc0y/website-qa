@@ -84,6 +84,26 @@ Nearly everything below is one of these. When you write a check, ask which one i
   the design-spec matcher silently picked the tab and reported a font-size *and* a colour
   mismatch against a node describing the card. *Fixed:* count distinct matches, warn.
 
+### A second measurement path measures worse
+
+- **Open states were audited by a different route from the resting page.** `openStateAudit`
+  took the layout script as text and evaluated it itself, which looked like reuse and was
+  not: it skipped the role pass, so every open-panel reading fell back to class-name
+  matching — the exact path that reported a carousel section as 1865px of clipped copy — it
+  skipped the fit measurements entirely, and it never measured twice, so nothing found
+  inside a panel could be labelled timing-dependent. Open panels are where collisions live;
+  they were getting the weakest evidence in the run. *Fixed:* the runner passes its
+  measurement function in, so there is one definition of "take a measurement" and open
+  states get roles, slack, collisions and stability like everything else.
+- **Three modules shipped with no test while their commit claimed proof.** `perturb.mjs`,
+  `impact.mjs` and `attribution.mjs` had none — the plan named the fixtures and the
+  implementation skipped them, which is the failure mode this whole file exists to catch,
+  applied to the tooling instead of a page. *Fixed:* each is now asserted on the property
+  that makes it trustworthy — a perturbation reports the box that breaks and not the one
+  with room, and never claims credit for damage that was already there; ranking ignores what
+  a detector called `info` or `unstable`; attribution names the declaration that won the
+  cascade and says when a selector matched several nodes.
+
 ### Ranking and explaining can invent findings of their own
 
 - **A ranking must never overrule the measurement it ranks.** The first impact ranking put
