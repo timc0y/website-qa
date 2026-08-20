@@ -1,18 +1,96 @@
 # Website Quality Skills
 
-Independent, evidence-led skills for reviewing rendered websites:
+Three independent, evidence-led skills for reviewing rendered websites. Each answers
+one question on its own and never claims evidence it did not inspect.
 
-- `website-qa` finds functional, responsive, accessibility, metadata, runtime and
-  visual defects without needing a design reference.
-- `figma-parity` compares a rendered interface with exact Figma nodes, breakpoints
-  and states.
+| Skill | Question it answers | Needs |
+|---|---|---|
+| [`website-qa`](skill/website-qa/SKILL.md) | Is this website broken? | a URL |
+| [`figma-parity`](skill/figma-parity/SKILL.md) | Does it match these Figma nodes? | a URL and specific Figma nodes |
+| [`engine-behaviour`](skill/engine-behaviour/SKILL.md) | Why does this engine, device or power state cause this symptom? | a symptom |
 
-They run independently. Parallax can import their evidence manifests, and Forge can
-supply remote captures, without either service becoming a runtime dependency.
+They work on any rendered site — Webflow, Framer, Shopify, Next, Astro, hand-written
+HTML — because the checks look for **shapes and behaviour, never framework class
+names**. Platform knowledge enters through an optional `--vocabulary` file and can only
+add candidates, never override what shape analysis found.
+
+- **Operator's guide:** [docs/using-website-qa.md](docs/using-website-qa.md) — install,
+  recipes, what each output file is for, troubleshooting.
+- **The review method** lives in each skill's `SKILL.md`, and the hard-won detail in its
+  `references/`. Those are the source of truth; this file does not restate them.
+
+## Requirements
+
+| | |
+|---|---|
+| Node | 18 or newer (ESM, `structuredClone`). Developed and tested on Node 26. |
+| Dependency | `playwright` 1.62.1 — the only runtime dependency, pinned. |
+| Browsers | Chromium required; WebKit for the cross-engine pass. `npx playwright install chromium webkit` downloads ~1 GB into the Playwright cache. |
+| OS | macOS, Linux or Windows. Nothing platform-specific in the checks. |
+| Network | Outbound access to the site under review. Nothing is uploaded anywhere. |
+| Chromium-only | `--why-css` (CSS attribution) uses the debugger protocol. Absent elsewhere, and stated as a limitation rather than skipped silently. |
+
+Interactive use needs no install at all: every file in `skill/website-qa/scripts/` is a
+self-contained IIFE you can paste into a browser console. It will tell you which
+evidence it had (`roleSource`) so a weaker reading is never mistaken for a full one.
+
+## Quick start
+
+```sh
+npm ci
+npx playwright install chromium webkit
+node skill/website-qa/runner/qa_runner.mjs --url=https://example.com --out=qa-output
+```
+
+Read `qa-output/<timestamp>/summary.md` top-down: regressions first, then findings
+ordered by the content a reader loses. Full recipes are in the
+[operator's guide](docs/using-website-qa.md).
+
+Install the skills into Codex, Claude, OpenCode and Gemini:
+
+```sh
+npm run sync:skills
+```
+
+`npm run check:skills` reports installation drift without changing anything. To install
+one skill elsewhere, copy its complete folder from `skill/`.
+
+## How `website-qa` works
+
+A run drives a real browser the way a reviewer would — every breakpoint, hovering,
+clicking things open, tabbing through, scrolling to the bottom — and audits what it
+finds at each step. A resting-state DOM dump can only find resting-state bugs; every
+report that starts "on hover…" or "when you click…" is invisible to one.
+
+Six phases, each owned by one module:
+
+1. **Settle.** Fonts loaded, lazy images requested, entrance animations *finished* —
+   `document.getAnimations()` is drained rather than a delay guessed at.
+2. **Classify.** `audit_roles.js` infers what each element *is* — track, slide, scrim,
+   sticky, closed panel, hover-reveal, marquee, decoration — from shape and behaviour.
+   Every later check consults it, which is why a carousel is recognised on any stack.
+3. **Measure**, per breakpoint: geometry (`audit_layout.js`), fit and headroom
+   (`audit_slack.js`), polish, content, accessibility, SEO, AEO, CSS cascade. Each
+   measurement is taken twice; anything appearing in only one reading is labelled
+   timing-dependent instead of reported as fact.
+4. **Sweep.** Every width in the range, not only the breakpoints — because hand-placed
+   boxes fail *between* boundaries, where nobody looked. Defects are reported as the
+   width **range** they exist in.
+5. **Predict** (`--perturb`). Vary the inputs a site actually varies — a longer word,
+   copy 50% longer, the webfont unavailable, text zoom at 200%, images absent — and
+   report what each change *causes*. Applied to the render only; undone by reload.
+6. **Explain and rank.** `--why-css` names the declaration behind a finding; findings
+   are ordered by content a reader loses, and diffed against the previous run so a
+   regression is reported before any absolute finding.
+
+Adding a check is one file plus one row in `runner/lib/registry.mjs`, which declares
+what each audit produces. The runner, the regression diff, the finding index and the
+summary all read that declaration, and `npm test` asserts every declared finding
+reaches all four.
 
 ## Independence and integration
 
-Each skill is independently installable and answers one question on its own:
+Each skill is independently installable and proves one thing alone:
 
 | Skill | Proves alone | Never claims |
 |---|---|---|
@@ -44,24 +122,21 @@ carries its own copy and `npm test` asserts they are byte-identical. Extracting 
 into a shared package would create precisely the coupling this layout avoids; the
 equality gate costs six lines and catches drift immediately.
 
-## Install
+## What these skills will not tell you
 
-Link both canonical skills into Codex, Claude, OpenCode and Gemini:
+Stated here because a review that hides its limits is worse than a shorter one.
 
-```sh
-npm run sync:skills
-```
-
-Use `npm run check:skills` to report installation drift without changing anything.
-To install only one skill elsewhere, copy its complete folder from `skill/`.
-
-## Run Website QA directly
-
-```sh
-npm ci
-npx playwright install chromium webkit
-node skill/website-qa/runner/qa_runner.mjs --url=https://example.com --out=qa-output
-```
+- **Nothing about Safari.** Playwright's WebKit is trunk on a non-Apple port. It cannot
+  reproduce the URL bar, keyboard, safe areas, touch momentum, Low Power Mode or iOS
+  autoplay policy. Cross-engine differences are leads; devices settle them.
+- **Nothing inside a closed shadow root.** Open roots are traversed and reported against
+  their light-DOM host. Closed ones are unmeasurable, and that is stated in the run.
+- **Nothing about contrast over imagery.** CSS cannot give a ratio against a photograph;
+  those cases are listed separately as "judge this on the screenshot".
+- **Nothing a page never rendered.** Authenticated states, form submissions and backend
+  delivery are out of scope unless explicitly prepared and declared.
+- **No unverified claim of absence.** A missing element needs a clean screenshot as well
+  as a selector miss; selectors alone do not prove absence.
 
 ## Verify the repository
 
@@ -69,8 +144,9 @@ node skill/website-qa/runner/qa_runner.mjs --url=https://example.com --out=qa-ou
 npm test
 ```
 
-This validates public disclosure, shared evidence contracts, both skill packages,
-the website detector/regression suites, and the Figma parity utilities.
+Validates public disclosure, shared evidence contracts, both skill packages, the
+detector fixtures (each asserting a defect is caught *and* correct markup stays clean),
+the regression suite, the registry contract, and the Figma parity utilities.
 
 ## License
 

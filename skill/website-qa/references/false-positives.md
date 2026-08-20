@@ -84,7 +84,90 @@ Nearly everything below is one of these. When you write a check, ask which one i
   the design-spec matcher silently picked the tab and reported a font-size *and* a colour
   mismatch against a node describing the card. *Fixed:* count distinct matches, warn.
 
+### Ranking and explaining can invent findings of their own
+
+- **A ranking must never overrule the measurement it ranks.** The first impact ranking put
+  `img.insights-card_img` at the top of the report — "~10 words of content affected" — on a
+  finding whose own text reads *"still loading when audited — NOT a defect"*. The detector
+  had already been careful; the ranking threw that away by matching `/broken/` against the
+  issue string. *Fixed:* `severity: 'info'` and `unstable` findings are never ranked.
+- **A ranking that reads a different table from the report contradicts it.** Reading only
+  `byBreakpoint` put the run's most serious finding — a collision existing from 992 to
+  1120px, at no agreed breakpoint — nowhere in "worst first", three headings above the sweep
+  section that reported it. *Fixed:* sweep findings rank too.
+- **Attribution to a selector that matches many nodes is a guess.** `.u-cover` matches every
+  cover image on the page; naming its declarations for a finding about one of them sends
+  someone to the right rule for the wrong reason. *Fixed:* report `matchedNodes` and say
+  which one the declarations belong to, rather than implying a single answer.
+
 ### Intentional read as broken
+
+- **Layered is not colliding.** webflow.com prints a "machine mode" easter egg of JSON-LD
+  text under its headings — fully visible by every CSS test, with an opaque panel painted in
+  between. Geometrically three headings sit on top of other text; to a reader nothing is
+  wrong. Two bugs came out of chasing it. The paragraphs' own `opacity` is 1, so the filter
+  had to become `checkVisibility({ checkOpacity: true })`, which asks up the whole ancestor
+  chain — and the occlusion test first looked for opaque paint *above both* runs
+  (`slice(0, min(iA, iB))`), which is empty whenever the upper run is topmost, so the layered
+  case sailed straight through. What matters is paint *between* them: `slice(lo + 1, hi)`.
+  Two further things this taught, both now in the code: a hit test needs its point on screen,
+  so it scrolls there and restores (`behavior: 'instant'` — a site with
+  `scroll-behavior: smooth` animates a bare `scrollTo`, and the offset has not moved by the
+  next line, so every finding came back unverified), and where window scrolling does nothing
+  at all (Lenis, Locomotive: they translate a wrapper instead) the finding has to say so and
+  stay SUSPECTED rather than pretend to be measured.
+- **`checkVisibility()` calls `display:contents` invisible.** It generates no box, so it is
+  not rendered, so the gate said no — and the gate sat in front of the shadow-root descent,
+  which threw away the counter digits the whole path exists to reach, for the second time in
+  one afternoon. Descend first, gate after, and treat `display:contents` as a passthrough.
+
+- **Measuring a page mid-reveal invents width-dependent defects.** Scrolling is what starts
+  scroll-triggered animations, and the sweep scrolls at every width — so a fixed settle delay
+  measures whatever the animation was doing. That produced a clean-looking run of seven stops,
+  "993–1137px: `.compare_savings-text` escapes its parent", for an element that sits happily
+  inside its parent on a fresh load at every one of those widths. It also produced the
+  opposite: a hero's stat pills photographed at 30% opacity, read as a contrast defect, and
+  solid a second later. *Fixed:* `settlePage` drains `document.getAnimations()` (ignoring
+  infinite ones) before anything is measured, and a sweep finding present at a single stop is
+  re-probed either side rather than guessed at. The guess was wrong in both directions within
+  one afternoon: at a 24px step it called a real artefact a defect, and at 96px it called both
+  genuine defects "probably animation" because a 130px band lands on exactly one 96px stop.
+  A measurement beats a heuristic — `transient` now means "re-probed ±step/3 and did not
+  reproduce", and only that is excluded from the baseline.
+- **A carousel's ancestor inherits the carousel's scroll width.** `section.services` has
+  `overflow-x: clip` and a slide track inside it, so the SECTION reports `scrollWidth` 2243
+  against `clientWidth` 378 — 1865px of "clipped copy", at every mobile width, on every run.
+  Excluding the track was not enough: the track is not wide either, its SLIDES hang off it,
+  and its class (`services_track`) matches no slider name anybody would think to list.
+  *Fixed:* ask where the overflow comes from — a slide sitting past this element's own edge
+  means the carousel is the mechanism.
+
+- **A card over a photograph is composition, not a collision.** The first version of
+  `overlappingContent` judged images as well as text and opened with three findings on one
+  hero — two stat cards and a testimonial each "covering" 9–18% of the picture — while
+  missing the one real defect underneath, a number half hidden by that same testimonial.
+  *Fixed:* only rendered TEXT is a covered target. A buried image is a job for the eye on
+  the screenshot, and gradients/scrims are excluded by name because sitting on top is their
+  entire purpose.
+- **`transition-property` initialises to `all` on every element.** The hover-slide exclusion
+  (two arrows in a clip box the width of one) tested the property alone, which is true of
+  the whole document — so `escapesParent` excused every element on the page and reported
+  nothing, anywhere, while passing its own live run. A detector that returns empty because
+  its *exclusion* matched everything looks exactly like a clean page. *Fixed:* require a
+  non-zero `transition-duration` as well.
+- **`scrollWidth` is not the content width.** An inline-block with `padding:0 10px` and
+  `white-space:nowrap` reports `scrollWidth` 109 against `clientWidth` 99 on content that
+  measures 89 and fits with room to spare — three confident "nowrap text does not fit"
+  findings on a nav that is not broken. *Fixed:* measure where the content actually ends
+  (union of child boxes and text rects) against the padding box.
+- **Text inside a web component is not absent.** An animated counter renders its digits in a
+  shadow root, one character per text node, inside an `overflow:hidden` column holding all
+  ten digits — and the host is `display:contents`, so its own box measures 0×0. Three
+  separate assumptions each silently deleted the content: a light-DOM-only walk, a
+  `length > 1` filter on text nodes, and clipping rects to the host box. The number a person
+  can plainly see was, to the sweep, not there. *Fixed:* traverse open shadow roots, accept
+  single-character nodes inside them, clip to the nearest ancestor that really clips, and
+  report against the nearest classed light-DOM ancestor.
 
 - **Closed accordion panels** counted as collapsed flex/grid containers (and, in WebKit
   only, as a cross-browser defect). *Fixed:* a zero-height clipped disclosure target, or

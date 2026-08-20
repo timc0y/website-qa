@@ -45,6 +45,10 @@ import { findBaseline, loadBaseline, diffRuns, renderRegressionSection } from '.
 import { crossPageAudit, renderCrossPageSection } from './lib/crosspage.mjs';
 import { summarizeConsole } from './lib/console.mjs';
 import { annotateFindings } from './lib/finding-ids.mjs';
+import { SUMMARY_BITS, LAYOUT_FINDINGS } from './lib/registry.mjs';
+import { perturbationSweep } from './lib/perturb.mjs';
+import { attributeFindings } from './lib/attribution.mjs';
+import { rankByImpact } from './lib/impact.mjs';
 
 const ENGINES = { chromium, webkit, firefox };
 
@@ -91,6 +95,27 @@ const designSpec = specFile && existsSync(specFile) ? JSON.parse(readFileSync(sp
  * newest previous run under --out; --baseline= picks one explicitly. */
 const baselineArg = one('baseline', '');
 const doBaseline = !flag('no-baseline');
+/* A breakpoint list answers "is it broken AT these widths". It cannot answer "does it break
+ * at any point", and the difference is not academic: on the page this was written for, an
+ * absolutely positioned testimonial card covered a stat number for every width from 992 to
+ * 1190 and the eight-width default set — 1920, 1512, 1280, 991, 767, 479, 430, 393 — steps
+ * straight over the whole window. Hand-placed boxes fail BETWEEN boundaries, because that is
+ * where nobody looked. The sweep walks the range in fixed steps running the box-model checks
+ * only, and reports each defect as the width RANGE it exists in. It is ON by default at 64px
+ * — the two defects it found on the page it was written for were both invisible without it,
+ * which is a poor argument for opt-in. `--sweep=24` tightens it; `--no-sweep` turns it off. */
+const sweepStep = flag('no-sweep') ? 0 : (+one('sweep', '64') || 0);
+/* Perturbation is opt-in, unlike the width sweep, and for a measured reason rather than
+ * timidity: it reloads the page once per perturbation per width, so the default set costs
+ * five extra loads at every width it runs at. The sweep pays for itself on every page; this
+ * pays for itself before a content handover, a translation, or a template going live. */
+const perturbArg = one('perturb', '');
+const doPerturb = flag('perturb') || !!perturbArg;
+const perturbOnly = perturbArg && perturbArg !== 'all' ? perturbArg.split(',').map(v => v.trim()).filter(Boolean) : null;
+const perturbWidths = one('perturb-breakpoints', '1512,393').split(',').map(Number).filter(Boolean);
+/* Naming the declaration behind a finding needs the debugger protocol, which only Chromium
+ * offers here — so it is opt-in and its absence is stated rather than quietly skipped. */
+const doWhyCss = flag('why-css');
 if (vocabFile && !existsSync(vocabFile)) throw new Error(`vocabulary file does not exist: ${vocabFile}`);
 const vocab = loadVocab(vocabFile ? JSON.parse(readFileSync(vocabFile, 'utf8')) : null);
 const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -101,6 +126,11 @@ const LAYOUT = S('audit_layout.js');
 // near-miss wraps, widows — only exists at a particular width, and the notes people
 // actually file about them ("can this fit on one line?") are overwhelmingly mobile.
 // Running it once at desktop was why the first version of this runner found none.
+/* Roles run FIRST at every width: every other check consults `window.__WQA_ROLES` to ask
+ * what a thing is, and falls back to weaker class-name matching when it is absent. Slack
+ * runs alongside layout and owns every "does it fit" question. */
+const ROLES_SRC = S('audit_roles.js');
+const SLACK_SRC = S('audit_slack.js');
 const PER_BREAKPOINT = { layout: LAYOUT, polish: S('audit_polish.js') };
 const ONCE = { content: S('audit_content.js'), a11y_seo: S('audit_a11y_seo.js'),
   consistency: S('audit_consistency.js'), transitions: S('audit_transitions.js'),
@@ -124,9 +154,125 @@ const settlePage = async (page, extraMs = 0) => {
       scrollTo(0, y); await new Promise(r => setTimeout(r, 60));
     }
     scrollTo(0, 0); await new Promise(r => setTimeout(r, 250));
+    /* Then wait for the reveals to LAND. Scrolling the page is what starts them, so a fixed
+     * delay measures whatever the animation happened to be doing — which is how a width
+     * sweep produced a 993–1137px "element escapes its parent" run that does not exist on a
+     * fresh load at any of those widths. Ask the animations instead of guessing: drain the
+     * running set, ignoring the infinite ones (marquees, spinners) that never finish. */
+    const busy = () => document.getAnimations().filter(a => {
+      if (a.playState !== 'running') return false;
+      const d = a.effect && a.effect.getTiming ? a.effect.getTiming() : null;
+      return !(d && (d.iterations === Infinity || d.duration === Infinity));
+    }).length;
+    for (let i = 0; i < 24 && busy(); i++) await new Promise(r => setTimeout(r, 50));
   }).catch(() => {});
   if (extraMs) await page.waitForTimeout(extraMs);
 };
+/* The sweep, as a function, because the second engine needs it too: a collision that only
+ * happens in WebKit is exactly the kind of thing a client reports from an iPhone, and
+ * running the sweep in one engine only would have made that unfindable by construction. */
+const SWEEP_KINDS = ['escapesParent', 'overlappingContent', 'textCollisions', 'textCannotFit',
+  'nowrapOverflow', 'nearlyCollapsed', 'clippedText', 'collapsedElements'];
+/* `slackAtRisk` is deliberately NOT swept. It is a property of a box rather than a defect
+ * that appears at a width, so it reported "393–1920px" on six elements — a band covering the
+ * entire range, which tells a reader nothing except that the sweep ran. The per-breakpoint
+ * report already carries it. */
+async function runWidthSweep(page) {
+  const lo = Math.min(...widths), hi = Math.max(...widths);
+  const seen = new Map(), stops = [];
+  for (let w = hi; w >= lo; w -= sweepStep) stops.push(w);
+  if (stops.at(-1) !== lo) stops.push(lo);
+  for (const w of stops) {
+    await page.setViewportSize({ width: w, height: 900 });
+    await settlePage(page, 350);
+    let L; try { L = await measureLayout(page); } catch (e) { continue; }
+    if (L.horizontalOverflow?.pageScrollsSideways) {
+      const k = 'scrollsSideways|page';
+      (seen.get(k) || seen.set(k, { kind: 'scrollsSideways', what: 'page scrolls sideways', widths: [] }).get(k)).widths.push(w);
+    }
+    for (const kind of SWEEP_KINDS) for (const f of (L[kind] || [])) {
+      const what = [f.el, f.covers, f.word, f.a && f.b ? `${f.a} × ${f.b}` : null, f.text].filter(Boolean)[0] || kind;
+      const k = kind + '|' + what;
+      const rec = seen.get(k) || seen.set(k, { kind, what, example: f, widths: [] }).get(k);
+      rec.widths.push(w);
+    }
+  }
+  /* Re-probe every finding that appeared at exactly one stop, rather than guessing what it
+   * means. One stop has two very different causes: a defect whose band is narrower than the
+   * step, and a measurement taken mid-reveal that was never there at all. Guessing produced
+   * both errors in one run — at a 24px step a real animation artefact, at 96px the two REAL
+   * defects, each landing on a single stop and each labelled "probably animation". Two extra
+   * measurements either side settle it, and a measurement beats a heuristic. */
+  const nudge = Math.max(4, Math.round(sweepStep / 3));
+  for (const r of seen.values()) {
+    if (r.widths.length !== 1) continue;
+    const w0 = r.widths[0];
+    for (const w of [w0 - nudge, w0 + nudge]) {
+      if (w < lo || w > hi) continue;
+      await page.setViewportSize({ width: w, height: 900 });
+      await settlePage(page, 350);
+      let L; try { L = await measureLayout(page); } catch (e) { continue; }
+      const here = (L[r.kind] || []).some(f => {
+        const what = [f.el, f.covers, f.word, f.a && f.b ? `${f.a} × ${f.b}` : null, f.text].filter(Boolean)[0];
+        return what === r.what; });
+      if (here) { r.widths.push(w); r.reprobed = true; }
+    }
+    if (!r.reprobed) r.transient = true;
+  }
+  /* Which of these would the agreed breakpoint list have found? A defect that exists only
+   * between the boundaries is the finding AND an argument about the method, so it is
+   * labelled rather than left for the reader to work out. */
+  const listed = new Set(widths);
+  await page.setViewportSize({ width: widths[0], height: 900 });
+  return { step: sweepStep, from: lo, to: hi, stops: stops.length, reprobeOffset: nudge,
+    findings: Array.from(seen.values()).map(r => ({
+      kind: r.kind, what: r.what,
+      range: r.widths.length === 1 ? `${r.widths[0]}px` : `${Math.min(...r.widths)}–${Math.max(...r.widths)}px`,
+      widths: r.widths.slice().sort((a, b) => a - b), stops: r.widths.length,
+      confirmedByReprobe: r.reprobed || undefined,
+      transient: r.transient || undefined,
+      missedByBreakpointList: !r.widths.some(w => listed.has(w)) || undefined,
+      detail: r.example })) };
+}
+
+/* One owner for "take a box-model measurement at this viewport", because there are four
+ * callers (per-breakpoint pass, sweep, second engine, perturbation) and they must agree on
+ * three things: roles are published before anything reads them, slack is measured with the
+ * same definition of available width, and an unstable reading is labelled rather than
+ * reported as fact.
+ *
+ * `stable: true` measures twice and marks findings that appeared in only one of the two
+ * readings. That is not paranoia — flake was diagnosed by hand twice while building this:
+ * a mid-reveal element measured as escaping its parent, and stat pills captured at 30%
+ * opacity and read as a contrast defect. A finding that will not reproduce 200ms later
+ * belongs in a different column from one that will. */
+async function measureLayout(page, { stable = false } = {}) {
+  const once = async () => {
+    let roles = null;
+    try { roles = await page.evaluate(run(ROLES_SRC)); } catch (e) { roles = { error: String(e.message || e).slice(0, 120) }; }
+    const out = await page.evaluate(run(PER_BREAKPOINT.layout));
+    try { Object.assign(out, await page.evaluate(run(SLACK_SRC))); }
+    catch (e) { out.slackError = String(e.message || e).slice(0, 120); }
+    out.roles = roles;
+    return out;
+  };
+  const first = await once();
+  if (!stable) return first;
+  await page.waitForTimeout(200);
+  let second; try { second = await once(); } catch (e) { return first; }
+  /* Compare by the same identity the regression diff uses, so "unstable" means the same
+   * thing here as "appeared" does there. */
+  for (const { array, identity } of LAYOUT_FINDINGS) {
+    if (!Array.isArray(first[array]) || !Array.isArray(second[array])) continue;
+    const id = identity || (f => JSON.stringify(f));
+    const later = new Set(second[array].map(id));
+    first[array] = first[array].map(f => later.has(id(f)) ? f
+      : { ...f, unstable: 'appeared in one of two readings 200ms apart — timing-dependent, ' +
+          'usually an entrance animation caught mid-flight. Confirm on a fresh load before reporting.' });
+  }
+  return first;
+}
+
 const DESIGN_SPEC_SRC = S('audit_design_spec.js');
 
 /* Keep a classic scrollbar out of the layout on EVERY page load, before any audit measures
@@ -227,7 +373,7 @@ for (const url of urls) {
           note: gutter ? `scrollbar takes ${gutter}px of layout width — full-bleed elements measure ${gutter}px narrow at this breakpoint` : undefined };
       }, w);
     } catch (e) { /* non-fatal */ }
-    try { Object.assign(bp, await page.evaluate(run(PER_BREAKPOINT.layout))); }
+    try { Object.assign(bp, await measureLayout(page, { stable: true })); }
     catch (e) { bp.error = e.message; }
     try { bp.polish = await page.evaluate(run(PER_BREAKPOINT.polish)); }
     catch (e) { bp.polish = { error: e.message }; }
@@ -238,6 +384,21 @@ for (const url of urls) {
       catch (e) { /* non-fatal */ }
     }
     await page.screenshot({ path: join(dir, `fullpage-${w}.png`), fullPage: true }).catch(() => {});
+  }
+
+  // ── width sweep: the box-model checks at every step, reported as ranges ────
+  if (sweepStep > 0) entry.once.widthSweep = await runWidthSweep(page);
+
+  // ── perturbation: what the next edit breaks ────────────────────────────────
+  if (doPerturb) {
+    try {
+      entry.once.perturbation = await perturbationSweep(page, {
+        widths: perturbWidths.filter(w => w > 0),
+        measure: p => measureLayout(p),
+        reload: async () => { await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {}); },
+        settle: () => settlePage(page, 250),
+        only: perturbOnly });
+    } catch (e) { entry.once.perturbation = { error: String(e.message || e).slice(0, 160) }; }
   }
 
   // ── breakpoint-independent audits, once at a mid-desktop width ─────────────
@@ -351,6 +512,20 @@ for (const url of urls) {
     warningSummary: summarizeConsole(consoleWarnings, url)
   };
   entry.network = { badResponses, failedRequests: failedReqs };
+
+  /* Attribution runs last, over findings that already exist: it explains, it never detects.
+   * Widest breakpoint only — the rule behind a constraint is the same rule at every width,
+   * and repeating it per width would multiply the report without adding a fact. */
+  if (doWhyCss) {
+    const widest = entry.byBreakpoint[Math.max(...widths)] || {};
+    const targets = LAYOUT_FINDINGS.flatMap(({ array }) => widest[array] || []);
+    await page.setViewportSize({ width: Math.max(...widths), height: 900 });
+    await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+    await settlePage(page, 250);
+    try { entry.cssAttribution = await attributeFindings(page, targets); }
+    catch (e) { entry.cssAttribution = { available: false, why: String(e.message || e).slice(0, 120) }; }
+  }
+  entry.impact = rankByImpact(entry);
   report.urls.push(entry);
   await page.close();
 }
@@ -383,7 +558,7 @@ for (const eng of engines.slice(1)) {
        * which a difference means anything. */
       await settlePage(p2, 400);
       const bp = byBp[w] = {};
-      try { Object.assign(bp, await p2.evaluate(run(PER_BREAKPOINT.layout))); } catch (e) { bp.error = e.message; }
+      try { Object.assign(bp, await measureLayout(p2, { stable: true })); } catch (e) { bp.error = e.message; }
       try { bp.polish = await p2.evaluate(run(PER_BREAKPOINT.polish)); } catch (e) { bp.polish = { error: e.message }; }
     }
     // Same widths, same scroll offsets, other engine — so the two tile sets can be
@@ -400,10 +575,21 @@ for (const eng of engines.slice(1)) {
         if (eVision[w]) eVision[w].dir = join('vision', `${w}-${eng}`);
       }
     }
+    /* Same sweep, other engine. Reported as a delta below rather than as a second list of
+     * findings: a range that appears in one engine only is a browser bug, and a range both
+     * engines agree on has already been reported once. */
+    let eSweep = null;
+    if (sweepStep > 0) {
+      await p2.goto(entry.url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+      await p2.waitForTimeout(waitMs);
+      try { eSweep = await runWidthSweep(p2); } catch (e) { eSweep = { error: String(e.message || e).slice(0, 160) }; }
+    }
     let probes = null; try { probes = await engineProbes(p2); } catch (e) {}
     if (probes) (entry.engineProbes = entry.engineProbes || {})[eng] = probes;
     entry.engines = entry.engines || {};
-    entry.engines[eng] = { byBreakpoint: byBp, vision: eVision,
+    entry.engines[eng] = { byBreakpoint: byBp, vision: eVision, widthSweep: eSweep,
+      sweepDiffVsPrimary: eSweep && !eSweep.error
+        ? diffSweeps(entry.once.widthSweep, eSweep, engines[0], eng) : null,
       diffVsPrimary: diffEngines(entry.byBreakpoint, byBp, widths, engines[0], eng) };
     await p2.close();
   }
@@ -438,6 +624,28 @@ function diffEngines(a, b, widths, nameA, nameB) {
         hint: `${name} differs between ${nameA} and ${nameB} at ${w}px — likely a browser-specific rendering bug` });
     }
   }
+  return out;
+}
+
+/* Sweep ranges, engine against engine. A range in one engine only is the finding — that is
+ * the "it looks fine on my machine, my client sent me a photo of it broken" case. Ranges are
+ * compared by identity (kind + element), not by their endpoints, because a band shifting by
+ * one step is the same defect and reporting it as two would bury the real difference. */
+function diffSweeps(a, b, nameA, nameB) {
+  const key = f => `${f.kind}|${f.what}`;
+  const A = new Map((a?.findings || []).map(f => [key(f), f]));
+  const B = new Map((b?.findings || []).map(f => [key(f), f]));
+  const out = [];
+  for (const [k, f] of A) if (!B.has(k))
+    out.push({ what: f.what, kind: f.kind, range: f.range, onlyIn: nameA,
+      hint: `present in ${nameA} (${f.range}) and absent in ${nameB} — engine-specific` });
+  for (const [k, f] of B) if (!A.has(k))
+    out.push({ what: f.what, kind: f.kind, range: f.range, onlyIn: nameB,
+      hint: `present in ${nameB} (${f.range}) and absent in ${nameA} — engine-specific, and the ` +
+        `kind of defect a client reports from a device the primary engine never shows` });
+  for (const [k, f] of A) { const g = B.get(k); if (g && g.range !== f.range)
+    out.push({ what: f.what, kind: f.kind, [nameA]: f.range, [nameB]: g.range,
+      hint: 'same defect, different width band per engine' }); }
   return out;
 }
 
@@ -525,7 +733,27 @@ if (report.crossPage && !report.crossPage.error) {
 }
 
 for (const e of report.urls) {
-  lines.push(`## ${e.url}`, '', '### Layout by breakpoint');
+  lines.push(`## ${e.url}`, '');
+  /* Ordered by what a reader loses, before the by-breakpoint detail. The detail is how each
+   * finding was measured; this is which of them matter, and they are not the same list. */
+  if (e.impact?.findings) {
+    lines.push(`### Worst first (${e.impact.findings} finding(s), ~${e.impact.total} words of content affected)`);
+    const widestBp = e.byBreakpoint[Math.max(...widths)] || {};
+    const allWidest = LAYOUT_FINDINGS.flatMap(({ array }) => widestBp[array] || []);
+    for (const r of e.impact.top.slice(0, 8)) {
+      const cause = r.el ? allWidest.find(f => (f.el || f.covers || f.a) === r.el)?.cause : null;
+      const why = cause?.declarations?.length
+        ? ' — ' + cause.declarations.slice(0, 2).map(d => `\`${d.selector} { ${d.property}: ${d.value} }\``).join(', ')
+        : '';
+      const where = r.range ? `${r.range} (width sweep)`
+        : `${r.widths.join(', ')}px${r.instances > r.widths.length ? ` ×${r.instances}` : ''}`;
+      lines.push(`- ~${r.wordsAffected} words · ${r.kind} · ${r.el || '(unnamed)'} at ${where}${why}`);
+    }
+    if (e.cssAttribution && !e.cssAttribution.available)
+      lines.push(`- (CSS attribution unavailable: ${e.cssAttribution.why})`);
+    lines.push('');
+  }
+  lines.push('### Layout by breakpoint');
   for (const w of widths) {
     const L = e.byBreakpoint[w]; if (!L || L.error) { lines.push(`- ${w}px: (audit error)`); continue; }
     const bits = [];
@@ -540,14 +768,18 @@ for (const e of report.urls) {
     if (L.horizontalOverflow?.offenders?.length) bits.push(`${L.horizontalOverflow.offenders.length} overflow`);
     if (L.horizontalOverflow?.cutOffButContained?.length)
       bits.push(`${L.horizontalOverflow.cutOffButContained.length} cut off but contained (SUSPECTED — no sideways scroll)`);
-    if (L.collapsedElements?.length) { bits.push(`${L.collapsedElements.length} collapsed`); high++; }
-    if (L.unintendedWrapping?.length) bits.push(`${L.unintendedWrapping.length} wrapping`);
-    if (L.lowContrast?.length) bits.push(`${L.lowContrast.length} low-contrast`);
-    // not a defect count — a "CSS can't answer this, look at it" count
+    /* Every finding array's bit comes from the registry, so a new detector appears in this
+     * line the moment it is declared. The bespoke lines above and below stay hand-written:
+     * they are judgements about wording, not counts. */
+    for (const b of SUMMARY_BITS) {
+      const n = b.count(L); if (!n) continue;
+      const extra = b.detail ? b.detail(b.pick(L) || []) : '';
+      bits.push(`${b.warn ? '⚠︎ ' : ''}${n} ${b.bit}${extra}`);
+      if (b.severity === 'high') high++;
+    }
+    // Not a defect count: a "CSS cannot answer this, go and look" count. It has no
+    // registry entry because there is nothing to diff — the number is a reading list.
     if (L.contrastUnverifiable?.length) bits.push(`${L.contrastUnverifiable.length} text-on-imagery (contrast unverifiable)`);
-    if (L.imageIssues?.length) bits.push(`${L.imageIssues.length} image`);
-    // a sized media box holding nothing — the case every image check is blind to
-    if (L.emptyMediaSlots?.length) { bits.push(`⚠︎ ${L.emptyMediaSlots.length} EMPTY media slot(s)`); high++; }
     if (L.carousels?.missingArrows?.length) { bits.push(`${L.carousels.missingArrows.length} carousel w/o arrows`); high++; }
     if (L.carousels?.collapsedArrows?.length) { bits.push(`${L.carousels.collapsedArrows.length} 0px arrows`); high++; }
     // informational, not a defect — controls switched off by a media query
@@ -558,6 +790,59 @@ for (const e of report.urls) {
     if (P.orphanHeadings?.length) bits.push(`${P.orphanHeadings.length} widows`);
     if (P.wrappedGroups?.length) bits.push(`${P.wrappedGroups.length} wrapped button groups`);
     lines.push(`- ${w}px: ${bits.join(', ') || 'clean'}`);
+  }
+
+  // ── the width sweep, as ranges ────────────────────────────────────────────
+  const sw = e.once?.widthSweep;
+  if (sw) {
+    lines.push('', `### Width sweep (${sw.from}–${sw.to}px, every ${sw.step}px, ${sw.stops} stops)`);
+    if (!sw.findings.length) lines.push('- no box-model defect at any width in the range');
+    for (const f of sw.findings) {
+      const missed = f.missedByBreakpointList
+        ? ' — **exists only BETWEEN the agreed breakpoints; the breakpoint list would have missed it**' : '';
+      /* `transient` is measured, not assumed: the sweep re-probed either side of a lone
+       * stop and the defect did not reproduce, which on a page full of scroll reveals
+       * usually means the measurement caught one mid-flight. A lone stop that DID
+       * reproduce is a real defect in a band narrower than the step. */
+      const lone = f.transient
+        ? ' — SUSPECTED (one width only, and it did not reproduce ' +
+          `±${sw.reprobeOffset}px; usually reveal-animation state)`
+        /* Say what the range IS, which for a re-probed finding is a floor and not the
+         * edges. A 96px step that found this at one stop and confirmed it ±32px has proved
+         * 64px of band and bounded nothing: the real window on the page this was written
+         * for was 992–1120, reported here as 1024–1088. A reader who takes that as the
+         * extent will test the wrong widths after the fix. */
+        : (f.confirmedByReprobe
+          ? ` — AT LEAST this wide: a ${sw.step}px step cannot bound the band. Re-run with` +
+            ` --sweep=${Math.max(8, Math.round(sw.step / 4))} for the real edges`
+          : '');
+      lines.push(`- ${f.range}: ${f.kind} — ${f.what}${missed}${lone}`);
+      if (f.missedByBreakpointList && !f.transient) high++;
+    }
+  }
+
+  const pert = e.once?.perturbation;
+  if (pert && !pert.error) {
+    lines.push('', `### What the next edit breaks (perturbation: ${pert.ran.join(', ')} at ${pert.widths.join(', ')}px)`);
+    if (!pert.findings.length) lines.push('- nothing new broke under any perturbation — the page has real headroom');
+    /* Grouped by perturbation, not by element: the reader's question is "what must I not do
+     * to this page", and one cause with six victims is one decision, not six. */
+    const byCause = {};
+    for (const f of pert.findings) (byCause[f.perturbation] = byCause[f.perturbation] || []).push(f);
+    for (const [cause, list] of Object.entries(byCause)) {
+      lines.push(`- **${cause}** — ${list[0].question}`);
+      for (const f of list.slice(0, 6)) lines.push(`  - ${f.width}px: ${f.kind} — ${f.el}`);
+      if (list.length > 6) lines.push(`  - …and ${list.length - 6} more`);
+      high++;
+    }
+    for (const s2 of pert.skipped || []) lines.push(`- skipped: ${s2.perturbation || s2.name || ''} ${s2.why}`);
+  }
+
+  for (const [eng, data] of Object.entries(e.engines || {})) {
+    const d = data.sweepDiffVsPrimary;
+    if (!d || !d.length) continue;
+    lines.push('', `#### Width sweep — ${eng} vs ${engines[0]}`);
+    for (const f of d) { lines.push(`- ${f.kind} — ${f.what}: ${f.hint}`); high++; }
   }
 
   // width-independent polish findings, reported once from the widest breakpoint

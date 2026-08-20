@@ -79,6 +79,143 @@ const CASES = [
                      style="cursor:pointer;width:200px;height:60px">Multiple Directors</button>
            </div>`,
     read: r => r.accessibility.customWidgetsWithoutSemantics.length
+  },
+  {
+    /* The defect the box-model family was written for, reduced to its bones: an absolutely
+     * positioned card placed by hand, landing on a number. Nothing overflows the viewport,
+     * nothing is clipped, no element is 0×0 — every pre-existing check stays silent. */
+    name: 'overlappingContent — an absolutely positioned card covering a stat',
+    script: 'audit_layout.js',
+    bad: `<section style="position:relative;height:400px;width:900px">
+            <div class="stat" style="position:absolute;left:600px;top:120px;width:220px;height:140px;background:#c0522a">
+              <div class="stat_value" style="font-size:48px;color:#fff">1.2x</div>
+              <p style="color:#fff">Average policy improvement</p>
+            </div>
+            <div class="quote" style="position:absolute;left:480px;top:140px;width:200px;height:170px;background:#f7f7f7">
+              <blockquote>They saved me a lot of tax by switching my policy.</blockquote>
+            </div>
+          </section>`,
+    // same two cards, placed clear of each other — the shape this must NOT report
+    good: `<section style="position:relative;height:400px;width:900px">
+             <div class="stat" style="position:absolute;left:660px;top:120px;width:220px;height:140px;background:#c0522a">
+               <div class="stat_value" style="font-size:48px;color:#fff">1.2x</div>
+               <p style="color:#fff">Average policy improvement</p>
+             </div>
+             <div class="quote" style="position:absolute;left:380px;top:140px;width:200px;height:170px;background:#f7f7f7">
+               <blockquote>They saved me a lot of tax by switching my policy.</blockquote>
+             </div>
+           </section>`,
+    read: r => r.overlappingContent.length
+  },
+  {
+    /* A scrim over a photograph is the commonest out-of-flow box on any marketing page and
+     * must never be reported, or this check drowns the report it lives in. */
+    name: 'overlappingContent — a gradient scrim over a captioned photo is not a collision',
+    script: 'audit_layout.js',
+    bad: `<div style="position:relative;width:600px;height:300px">
+            <p style="margin:0;padding:20px;width:260px">Insurance for business owners who cannot afford to stop.</p>
+            <div class="card" style="position:absolute;left:100px;top:20px;width:300px;height:200px;background:#fff"></div>
+          </div>`,
+    good: `<div style="position:relative;width:600px;height:300px">
+             <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='300'%3E%3C/svg%3E"
+                  style="width:600px;height:300px">
+             <div class="hero_media-grad" style="position:absolute;inset:0;background:linear-gradient(#0000,#000)"></div>
+             <p style="position:absolute;left:20px;bottom:20px;margin:0;color:#fff">Business life insurance</p>
+           </div>`,
+    read: r => r.overlappingContent.length
+  },
+  {
+    /* The other half of the collision family: no coverer, no background, just two runs of
+     * type in the same pixels — here a heading whose box stopped growing with it. */
+    name: 'textCollisions — a heading spilling out of its box onto the copy below',
+    script: 'audit_layout.js',
+    bad: `<div style="width:420px">
+            <div class="card_head" style="height:34px">
+              <h3 style="margin:0;font-size:30px;line-height:1.4">Shareholder protection for growing businesses</h3>
+            </div>
+            <p class="card_body" style="margin:0;font-size:16px">Cover that lets the remaining owners buy the shares.</p>
+          </div>`,
+    /* Layered, not colliding: an opaque panel is painted between the two runs, so a reader
+     * sees one of them and nothing is wrong. webflow.com ships exactly this. */
+    good: `<div style="position:relative;width:420px;height:120px">
+             <p class="behind" style="position:absolute;top:40px;left:0;margin:0">"@type": "WebPageElement"</p>
+             <div style="position:absolute;inset:0;background:#fff"></div>
+             <h3 class="front" style="position:absolute;top:44px;left:0;margin:0;font-size:24px">Move the web forward</h3>
+           </div>`,
+    read: r => r.textCollisions.length
+  },
+  {
+    name: 'textCannotFit — one unbreakable word wider than its fixed-width parent',
+    script: 'audit_slack.js',
+    bad: `<div style="width:180px;font-size:20px">Ask about
+            <span style="display:block">Unternehmensnachfolgeversicherung</span></div>`,
+    // identical text, told it may break — so it fits, and is not a defect
+    good: `<div style="width:180px;font-size:20px;overflow-wrap:break-word">Ask about
+             <span style="display:block;overflow-wrap:break-word">Unternehmensnachfolgeversicherung</span></div>`,
+    read: r => r.textCannotFit.length
+  },
+  {
+    name: 'nowrapOverflow — nowrap label that cannot fit the box it is given',
+    script: 'audit_slack.js',
+    bad: `<div style="width:90px;white-space:nowrap;font-size:18px;border:1px solid #000">Request a callback today</div>`,
+    /* The false positive this replaced: an inline-block with horizontal padding and nowrap
+     * content reports scrollWidth 109 against clientWidth 99 while its content measures 89
+     * and fits — three confident findings on a nav that is not broken. */
+    good: `<a style="display:inline-block;padding:0 10px;white-space:nowrap;font-size:18px">
+             <span>Services</span><span style="display:inline-block;width:8px">&#9662;</span></a>`,
+    read: r => r.nowrapOverflow.length
+  },
+  {
+    name: 'escapesParent — a fixed-height card clipping the copy inside it',
+    script: 'audit_layout.js',
+    bad: `<div class="card" style="width:300px;height:70px;overflow:hidden">
+            <p class="card_text" style="margin:0;font-size:16px;line-height:24px">Key person cover pays out to the
+            business if a named individual dies, so payroll and lending covenants can still be met while you recruit
+            a replacement, and the loss of the person the bank actually lent against does not become the loss of
+            the company as well.</p>
+          </div>`,
+    /* The two shapes that made the naive version unusable: a slider track (wider than its
+     * frame by design) and the two-arrow hover-slide inside a 20px clip box. */
+    good: `<div class="services_carousel" style="width:300px;overflow:hidden">
+             <div class="services_track" style="display:flex;width:900px">
+               <div class="services_slide" style="width:300px">Relevant life</div>
+               <div class="services_slide" style="width:300px">Key person</div>
+               <div class="services_slide" style="width:300px">Shareholder</div>
+             </div>
+             <div class="arrow-circle" style="display:flex;width:20px;height:20px;overflow:hidden">
+               <div class="arrow-circle_arrow" style="width:20px;height:20px;transition:transform .3s">&rarr;</div>
+               <div class="arrow-circle_arrow is-next" style="width:20px;height:20px;transition:transform .3s">&rarr;</div>
+             </div>
+           </div>`,
+    read: r => r.escapesParent.length
+  },
+  {
+    /* The predictive case, and the reason `audit_slack.js` exists: nothing is broken here.
+     * A label with two characters of headroom is one rename away from wrapping, and no
+     * defect-shaped check can say so because there is no defect yet. */
+    name: 'slackAtRisk — a label that fits with two characters to spare',
+    script: 'audit_slack.js',
+    // 15 monospace characters need 144px; 162px leaves 18px, which is two characters
+    bad: `<div style="width:162px;font:16px/1.2 monospace;white-space:nowrap">Get a quote now</div>`,
+    good: `<div style="width:300px;font:16px/1.2 monospace;white-space:nowrap">Get a quote now</div>`,
+    read: r => r.slackAtRisk.length,
+    extra: r => r.slackAtRisk[0]
+      ? `headroom ${r.slackAtRisk[0].slackChars} char(s) / ${r.slackAtRisk[0].slackPx}px`
+      : 'no slack measured'
+  },
+  {
+    name: 'nearlyCollapsed — a flex item squashed to 3px while still holding content',
+    script: 'audit_layout.js',
+    bad: `<div style="display:flex;width:300px">
+            <div style="flex:0 0 297px;height:60px;background:#eee">Main</div>
+            <div class="side" style="min-width:0;height:60px;overflow:hidden"><p style="margin:0">Talk to our team</p></div>
+          </div>`,
+    // a 2px rule holds nothing, and must not be mistaken for a squashed box
+    good: `<div style="display:flex;width:300px">
+             <div style="flex:1;height:60px;background:#eee">Main</div>
+             <div class="rule" style="width:2px;height:60px;background:#333"></div>
+           </div>`,
+    read: r => r.nearlyCollapsed.length
   }
 ];
 
@@ -101,6 +238,68 @@ for (const c of CASES) {
   console.log(`    correct DOM   → ${onGood} finding(s) ${onGood === 0 ? '(clean)' : '(FALSE POSITIVE)'}`);
   if (c.extra) console.log(`    ${c.extra(await run(c.bad))}`);
   ok ? pass++ : fail++;
+}
+
+/* One-line assertion in this file's own style: print, count, move on. */
+const assert = (name, cond, detail = '') => {
+  console.log(`${cond ? '✓' : '✗'} ${name}`);
+  if (!cond && detail) console.log(`    ${detail}`);
+  cond ? pass++ : fail++;
+};
+
+/* ── audit_roles: shape beats names, and the detectors must actually consult it ──
+ * The regression this pins down is precise. A carousel whose track is called
+ * `services_track` matches no entry in any slider name list, so its clipping section
+ * reported 1865px of "clipped copy" at every mobile width on every run. Roles identify the
+ * track by its shape — near-equal children escaping the box that clips them — and
+ * `audit_layout.js` then stays quiet. Both halves are asserted: the inference, and the
+ * detector consuming it. */
+{
+  const ROLES_SRC = script('audit_roles.js');
+  const LAYOUT_SRC = script('audit_layout.js');
+  // deliberately named nothing like a carousel, and clipped by an ancestor with copy in it
+  const CAROUSEL = `<section class="services" style="width:400px;overflow-x:clip">
+      <h2>How we are helping</h2>
+      <div class="services_viewport">
+        <div class="services_track" style="display:flex;gap:16px;width:400px">
+          <div class="services_item" style="flex:0 0 380px">Relevant life</div>
+          <div class="services_item" style="flex:0 0 380px">Key person</div>
+          <div class="services_item" style="flex:0 0 380px">Shareholder</div>
+        </div>
+      </div>
+    </section>`;
+  await page.setContent(`<!doctype html><html><body style="margin:0">${CAROUSEL}</body></html>`);
+  await page.waitForTimeout(120);
+  const roles = await page.evaluate(ROLES_SRC);
+  assert('roles infer a track from shape, with no slider-ish class name in the DOM',
+    roles.counts.track >= 1 && roles.counts.slide >= 3, JSON.stringify(roles.counts));
+  const withRoles = await page.evaluate(LAYOUT_SRC);
+  assert('…and audit_layout, consulting them, does not report the clipping section as clipped text',
+    withRoles.clippedText.length === 0, JSON.stringify(withRoles.clippedText));
+
+  // the hover-slide: two arrows in a box the size of one, with a real transition duration
+  await page.setContent(`<!doctype html><html><body style="margin:0">
+    <div class="ico" style="display:flex;width:20px;height:20px;overflow:hidden">
+      <div class="ico_a" style="flex:0 0 20px;height:20px;transition:transform .3s">&rarr;</div>
+      <div class="ico_b" style="flex:0 0 20px;height:20px;transition:transform .3s">&rarr;</div>
+    </div></body></html>`);
+  await page.waitForTimeout(120);
+  const hover = await page.evaluate(ROLES_SRC);
+  assert('roles infer a hover-reveal from behaviour (transition duration), not from a name',
+    (hover.counts.hoverReveal || 0) >= 2, JSON.stringify(hover.counts));
+
+  /* And the property that keeps this from being a framework: every audit still runs alone.
+   * A person pasting one file into a console gets the weaker class-name fallback, not a
+   * crash and not silence. */
+  await page.setContent(`<!doctype html><html><body style="margin:0">
+    <div class="card" style="width:300px;height:40px;overflow:hidden"><p style="margin:0">
+    Cover that pays out to the business if a named individual dies, so payroll and lending
+    covenants can still be met while a replacement is recruited.</p></div></body></html>`);
+  await page.waitForTimeout(120);
+  const alone = await page.evaluate(`(() => { delete window.__WQA_ROLES; return true; })()`);
+  const noRoles = await page.evaluate(LAYOUT_SRC);
+  assert('audit_layout still works with no role pass at all (console fallback)',
+    alone === true && noRoles.escapesParent.length >= 1, JSON.stringify(noRoles.escapesParent).slice(0, 120));
 }
 
 /* ── formAudit ────────────────────────────────────────────────────────────────

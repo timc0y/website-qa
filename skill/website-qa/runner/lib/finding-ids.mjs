@@ -1,10 +1,14 @@
 import { createHash } from 'node:crypto';
+import { FINDING_ARRAY_NAMES } from './registry.mjs';
 
+/* Structural names first: these belong to no single audit, so they cannot be declared in
+ * the registry. Every per-audit array name comes from there instead — a detector that is
+ * added to the registry is indexed without touching this file, which is the point. */
 const FINDING_ARRAYS = new Set([
   'findings', 'errors', 'warnings', 'offenders', 'missing', 'outliers',
   'regressions', 'dead', 'failed', 'hazards', 'issues', 'violations',
-  'collapsedElements', 'unintendedWrapping', 'clippedText', 'lowContrast',
-  'imageIssues', 'emptyMediaSlots', 'missingArrows', 'collapsedArrows',
+  ...FINDING_ARRAY_NAMES,
+  'missingArrows', 'collapsedArrows',
   'nearMissWraps', 'orphanHeadings', 'wrappedGroups', 'missingGaps',
   'unlinkedPhones', 'unlinkedEmails', 'falseAffordance', 'missingAffordance',
   'unselectableText', 'emptyLists', 'emptyBindings', 'upscaledImages',

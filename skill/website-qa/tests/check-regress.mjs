@@ -209,6 +209,69 @@ console.log('\nregress.mjs — run-to-run diff\n');
     !d.urls[0].fixes.some(x => x.key === 'forms.issues'), JSON.stringify(d.urls[0].fixes));
 }
 
+/* ── width-sweep bands ─────────────────────────────────────────────────────────
+ * The sweep is the only metric whose identity deliberately drops its own measurement: a
+ * band that shifts by a step is the same defect, so identity is kind+element and the range
+ * travels separately as a value. These three cases pin all of that down, including the one
+ * that matters most — a run made with --no-sweep must not read as "every band fixed". */
+const sweep = (findings) => ({ step: 24, from: 393, to: 1920, stops: 65, findings });
+const band = (kind, what, range, stops = 6, extra = {}) => ({ kind, what, range, stops, widths: [], detail: {}, ...extra });
+{
+  const prev = { dir: './qa-run/prev', report: mk() };
+  prev.report.urls[0].once.widthSweep = sweep([]);
+  const curr = mk();
+  curr.urls[0].once.widthSweep = sweep([band('overlappingContent', 'div.stat-value', '993–1113px')]);
+  const d = diffRuns(prev, curr);
+  ok('a new collision band → regression, named',
+    d.urls[0].regressions.some(x => x.key === 'sweep.defectBands' && x.kind === 'appeared'),
+    JSON.stringify(d.urls[0].regressions));
+}
+{
+  const prev = { dir: './qa-run/prev', report: mk() };
+  prev.report.urls[0].once.widthSweep = sweep([band('overlappingContent', 'div.stat-value', '993–1113px')]);
+  const curr = mk();
+  curr.urls[0].once.widthSweep = sweep([band('overlappingContent', 'div.stat-value', '900–1300px')]);
+  const d = diffRuns(prev, curr);
+  const u = d.urls[0];
+  ok('the same band, wider → a change, not a regression',
+    !u.regressions.some(x => x.key === 'sweep.defectBands') &&
+    u.changes.some(x => String(x.key).startsWith('sweep.overlappingContent')),
+    JSON.stringify({ r: u.regressions, c: u.changes }));
+}
+{
+  const prev = { dir: './qa-run/prev', report: mk() };
+  prev.report.urls[0].once.widthSweep = sweep([band('escapesParent', 'div.card_text', '993–1137px')]);
+  const curr = mk();                             // this run was invoked with --no-sweep
+  const d = diffRuns(prev, curr);
+  ok('--no-sweep on the new run → bands NOT reported as fixed',
+    !d.urls[0].fixes.some(x => x.key === 'sweep.defectBands'), JSON.stringify(d.urls[0].fixes));
+}
+{
+  const prev = { dir: './qa-run/prev', report: mk() };
+  prev.report.urls[0].once.widthSweep = sweep([]);
+  const curr = mk();
+  /* A finding the sweep re-probed and could not reproduce is animation timing, not a defect,
+   * and must not enter the baseline. Note the discriminator is `transient` (measured) and not
+   * `stops === 1` — at a coarse step a real band lands on one stop too. */
+  curr.urls[0].once.widthSweep = sweep([band('escapesParent', 'div.compare_intro', '393px', 1, { transient: true })]);
+  const d = diffRuns(prev, curr);
+  ok('a sweep finding that did not reproduce on re-probe → not a regression',
+    !d.urls[0].regressions.some(x => String(x.key).startsWith('sweep.')),
+    JSON.stringify(d.urls[0].regressions));
+}
+
+{
+  const prev = { dir: './qa-run/prev', report: mk() };
+  prev.report.urls[0].once.widthSweep = sweep([]);
+  const curr = mk();
+  // one stop, but re-probing confirmed it: a real defect in a band narrower than the step
+  curr.urls[0].once.widthSweep = sweep([band('overlappingContent', 'div.stat-value', '1032–1080px', 2,
+    { confirmedByReprobe: true })]);
+  const d = diffRuns(prev, curr);
+  ok('a narrow band confirmed by re-probe → still a regression',
+    d.urls[0].regressions.some(x => x.key === 'sweep.defectBands'), JSON.stringify(d.urls[0].regressions));
+}
+
 // ── config drift is stated, not silently absorbed ──────────────────────────────
 {
   const prev = { dir: './qa-run/prev', report: mk() };

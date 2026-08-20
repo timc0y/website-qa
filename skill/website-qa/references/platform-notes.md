@@ -34,10 +34,43 @@ exercises mobile navigation, accordions, tabs, and hydrated controls.
 
 ## Audit interpretation
 
+- `audit_roles`: runs FIRST and publishes `window.__WQA_ROLES`; every other audit asks
+  it what a thing is instead of matching class names. `track`/`slide` = near-equal
+  children escaping their clipping box; `hoverReveal` = a clip box the size of one
+  child whose children transition with a real duration; `scrim` = out-of-flow layer
+  covering its parent with no content; `disclosureClosed` = closed, not broken;
+  `decoration` = nothing a reader can lose. A `--vocabulary` pack may add role
+  candidates, never remove one — geometry outranks a name. With no role pass the
+  detectors fall back to class matching and say so in `roleSource`.
+- `audit_slack`: owns every fit question. `slack` is the ranked fragility map
+  (tightest first), `slackAtRisk` is headroom of ≤2 characters, `textCannotFit` and
+  `nowrapOverflow` are its negative cases. Excludes boxes that may break mid-word.
 - `audit_layout`: `pageScrollsSideways` is real overflow; `offenders` cross the
   right edge even when clipped; `collapsedElements` are rendered 0×0;
+  `nearlyCollapsed` are under 4px on one axis while still holding content;
+  `escapesParent` leave their parent's padding box (`clipped` = part is off
+  screen, `spills` = paints over neighbours); `overlappingContent` is an
+  out-of-flow box on top of rendered text, hit-tested when on screen and
+  `geometric` when not; `textCollisions` is two runs of type in the same pixels,
+  hit-tested by scrolling the point into view — an opaque layer between them means a
+  stack, not a collision — with `hitTesting` stating whether that was possible at all,
+  since a page whose scrolling is virtualised leaves every off-screen collision
+  geometric; `textCannotFit` is a measured word wider than its
+  container; `nowrapOverflow` is measured on content extent, never `scrollWidth`;
+  `unstable` on any finding means it appeared in one of two readings 200ms apart —
+  timing, usually an entrance animation, and never to be reported as fact;
   `unintendedWrapping` catches short labels/buttons on multiple lines;
   `lowContrast` excludes gradient/image backgrounds.
+- `perturbation`: findings are PREDICTIONS, each naming the input that causes it, each
+  absent from the page as served. `imagesAbsent` reproduces an empty CMS image field;
+  `fallbackFont` is every first paint and every blocked-CDN render; `textZoom200` is
+  WCAG 1.4.4 text-only zoom, which page zoom does not test.
+- `cssAttribution`: rule, property, value and line for a finding's element, after the
+  cascade. `ambiguous` counts selectors matching more than one node — the declarations
+  shown are the first one's. Chromium only.
+- `impact`: reading order by content lost, in words-of-content-equivalent. Skips
+  `severity: 'info'` and `unstable` findings, and includes width-sweep findings, or the
+  ranking would contradict the sweep section.
 - `audit_content`: `placeholderText` includes hidden shipped text via
   `visibleNow`; `deadLinks` are empty/`#`; `stagingLinks` target preview/builder/
   localhost; `extNewTab` is an external link without new-tab behaviour.

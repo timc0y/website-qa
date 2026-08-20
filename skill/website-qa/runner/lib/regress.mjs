@@ -34,6 +34,7 @@
  */
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { join } from 'path';
+import { AUDIT_METRICS, METRIC_LABELS } from './registry.mjs';
 
 /* ── locating the baseline ──────────────────────────────────────────────────────
  * Runs live at <outRoot>/<timestamp>/findings.json. The current run has already
@@ -79,58 +80,23 @@ function idOf(item) {
 }
 const idsOf = arr => (Array.isArray(arr) ? arr.map(idOf).filter(Boolean) : []);
 
-/* Per-breakpoint counted metrics. Every one of these is "how many defects of this kind
- * at this width" — the shape where an increase is unambiguously a regression. */
-const BP_COUNTS = {
-  'layout.overflow':          bp => len(bp?.horizontalOverflow?.offenders),
-  'layout.scrollsSideways':   bp => (bp?.horizontalOverflow?.pageScrollsSideways ? 1 : 0),
-  'layout.collapsed':         bp => len(bp?.collapsedElements),
-  'layout.wrapping':          bp => len(bp?.unintendedWrapping),
-  'layout.clippedText':       bp => len(bp?.clippedText),
-  'layout.imageIssues':       bp => len(bp?.imageIssues),
-  // the exact shape of the regression this module was written for: a media slot that
-  // has a container but no resolved source. An empty poster lands here.
-  'layout.emptyMediaSlots':   bp => len(bp?.emptyMediaSlots),
-  'layout.lowContrast':       bp => len(bp?.lowContrast),
-  'layout.invisibleText':     bp => len(bp?.invisibleText),
-  'layout.tinyTapTargets':    bp => len(bp?.tinyTapTargets),
-  'polish.gutterOutliers':    bp => len(bp?.polish?.containerGutters?.outliers),
-  'polish.oversizedSvgs':     bp => len(bp?.polish?.svg?.oversized),
-  'polish.falseAffordance':   bp => len(bp?.polish?.falseAffordance),
-  'polish.missingGaps':       bp => len(bp?.polish?.missingGaps),
-  // CMS bindings that render to nothing — the other half of the empty-template class
-  'polish.cmsEmptyLists':     bp => len(bp?.polish?.cmsEmptyStates?.emptyLists),
-  'polish.cmsEmptyBindings':  bp => len(bp?.polish?.cmsEmptyStates?.emptyBindings),
-  'polish.upscaledImages':    bp => len(bp?.polish?.upscaledImages),
-  'polish.duplicateIcons':    bp => len(bp?.polish?.duplicateIcons),
-  'polish.wrappedGroups':     bp => len(bp?.polish?.wrappedGroups),
-  'polish.hitTestBlocked':    bp => len(bp?.polish?.hitTestBlocked),
-  'polish.duplicateListItems':bp => len(bp?.polish?.duplicateListItems),
-  'polish.aspectRatioBroken': bp => len(bp?.polish?.aspectRatioNotHonoured)
-};
+/* Per-breakpoint metrics, derived from the audit registry.
+ *
+ * These used to be three hand-maintained maps — counts, identities, labels — and every new
+ * detector had to be added to all three by hand or it silently never reached a baseline.
+ * The registry declares the answer shape once; this module still owns the DIFF, which is
+ * the part that carries judgement: what counts as a regression, what is merely a change,
+ * and what is unknown because a phase did not run. */
+const BP_COUNTS = Object.fromEntries(AUDIT_METRICS.map(e => [e.metric, e.count]));
 
-/* Per-breakpoint items with a meaningful identity, keyed by WHAT the defect is and not
- * just how many there are.
- *
- * This exists because a count alone missed the exact regression this module was built to
- * catch. A smoke page whose image lost its `src` reported `imageIssues: 1` before AND
- * after — "aspect distorted" became "broken, no intrinsic size" — so the count never moved
- * and the diff said nothing, while the incidental disappearance of the upscaled-image
- * warning got reported as an improvement. Keying on element + issue kind turns that into
- * what it is: one issue resolved, one much worse issue appeared.
- *
- * Identity is element + kind, deliberately not the src/url. A src that changes on every
- * deploy (hashed asset names, a CDN query string) would otherwise make every image look
- * newly broken on every run. */
-const BP_ITEMS = {
-  'layout.imageIssues':      bp => (bp.imageIssues || []).map(i => `${i.el || 'img'} — ${i.issue || 'issue'}`),
-  'layout.emptyMediaSlots':  bp => idsOf(bp.emptyMediaSlots),
-  'layout.collapsed':        bp => idsOf(bp.collapsedElements),
-  'layout.clippedText':      bp => idsOf(bp.clippedText),
-  'layout.invisibleText':    bp => idsOf(bp.invisibleText),
-  'polish.cmsEmptyBindings': bp => idsOf(bp.polish?.cmsEmptyStates?.emptyBindings),
-  'polish.cmsEmptyLists':    bp => idsOf(bp.polish?.cmsEmptyStates?.emptyLists)
-};
+/* Identities, for the metrics that have a durable name. A count alone missed the exact
+ * regression this module was built for: a page whose image lost its `src` reported
+ * `imageIssues: 1` before AND after — "aspect distorted" became "broken, no intrinsic
+ * size" — so the count never moved and the diff said nothing. Keying on element + kind
+ * turns that into what it is: one issue resolved, one much worse issue appeared. */
+const BP_ITEMS = Object.fromEntries(AUDIT_METRICS
+  .filter(e => e.identity)
+  .map(e => [e.metric, bp => (e.pick(bp) || []).map(e.identity).filter(Boolean)]));
 
 /* Whole-page counted metrics, measured once. */
 const ONCE_COUNTS = {
@@ -156,7 +122,14 @@ const ONCE_COUNTS = {
   'forms.issues':             e => (e.forms && !e.forms.error ? len(e.forms.findings) : null),
   'typeScale.unscaled':       e => (e.typeScale ? len(e.typeScale.unscaled) : null),
   'design.typeFindings':      e => (e.design && !e.design.error ? len(e.design.typeFindings) : null),
-  'design.sectionFindings':   e => (e.design && !e.design.error ? len(e.design.sectionFindings) : null)
+  'design.sectionFindings':   e => (e.design && !e.design.error ? len(e.design.sectionFindings) : null),
+  /* Sweep bands, counted. Phase-gated like the rest: with --no-sweep on one of the two runs
+   * this must read "unknown", not "zero defects", or turning the sweep off would report
+   * every band it used to find as fixed. Single-stop findings are excluded — they are
+   * labelled SUSPECTED in the report for good reason and would otherwise flicker in and out
+   * of the baseline on animation timing alone. */
+  'sweep.defectBands':        e => (e.once?.widthSweep && !e.once.widthSweep.error
+    ? e.once.widthSweep.findings.filter(f => !f.transient).length : null)
 };
 
 /* Values, not counts. A change here is not automatically a defect — a title being
@@ -185,8 +158,26 @@ const ONCE_ITEMS = {
     : null),
   'content.placeholderText': e => (e.once?.content && !e.once.content.error ? idsOf(e.once.content.placeholderText) : null),
   'content.deadLinks':       e => (e.once?.content && !e.once.content.error ? idsOf(e.once.content.deadLinks) : null),
-  'network.badResponses':    e => (e.network ? idsOf(e.network.badResponses.filter(item => !item.thirdParty)) : null)
+  'network.badResponses':    e => (e.network ? idsOf(e.network.badResponses.filter(item => !item.thirdParty)) : null),
+  /* Identity WITHOUT the range: a band that shifts from 993–1137 to 1017–1137 because the
+   * step changed, or because a font loaded a frame later, is the same defect. Keyed this way
+   * a NEW collision is a regression and a moved one is a change — see sweepRanges below. */
+  'sweep.defectBands':       e => (e.once?.widthSweep && !e.once.widthSweep.error
+    ? e.once.widthSweep.findings.filter(f => !f.transient).map(f => `${f.kind}: ${f.what}`) : null)
 };
+
+/* The width band each sweep defect occupies, as a value keyed by the defect's identity. A
+ * band that widens — the same collision now spanning 200px of viewport instead of 40 — is
+ * worth reading and is not, by itself, a regression, which is exactly what the VALUES class
+ * is for. */
+function sweepRanges(entry) {
+  const out = {};
+  for (const f of entry.once?.widthSweep?.findings || []) {
+    if (f.transient) continue;                 // measured as not reproducible — see runWidthSweep
+    out[`sweep.${f.kind}|${String(f.what).slice(0, 60)}`] = f.range;
+  }
+  return out;
+}
 
 /* Per-heading rendered size, keyed by tag+text+breakpoint. This is what turns "the
  * type changed" into "this specific heading dropped from 42px to 32px", and it is the
@@ -241,7 +232,7 @@ export function signature(entry) {
   for (const [name, fn] of Object.entries(ONCE_ITEMS)) {
     const v = fn(entry); if (Array.isArray(v)) items[name] = v;
   }
-  Object.assign(values, typeSignature(entry), shapeSignature(entry));
+  Object.assign(values, typeSignature(entry), shapeSignature(entry), sweepRanges(entry));
   return { counts, values, items };
 }
 
@@ -359,20 +350,11 @@ export function diffRuns(baseline, report) {
 
 /* ── rendering ──────────────────────────────────────────────────────────────────*/
 
+/* Audit metric labels come from the registry; the entries below are the run-level metrics
+ * this module owns itself — links, console, network, content — which belong to no audit. */
 const LABEL = {
-  'layout.emptyMediaSlots': 'media slots with no resolved source',
-  'layout.imageIssues': 'image problems',
-  'layout.collapsed': 'elements collapsed to 0×0',
-  'layout.clippedText': 'clipped text',
-  'layout.invisibleText': 'invisible text',
-  'layout.overflow': 'elements overflowing horizontally',
-  'layout.scrollsSideways': 'page scrolls sideways',
-  'layout.tinyTapTargets': 'tap targets under the minimum',
-  'polish.cmsEmptyBindings': 'CMS bindings rendering empty',
-  'polish.cmsEmptyLists': 'CMS lists rendering empty',
-  'polish.upscaledImages': 'upscaled / pixelated images',
-  'polish.gutterOutliers': 'container gutter outliers',
-  'polish.oversizedSvgs': 'oversized SVGs',
+  ...METRIC_LABELS,
+  'sweep.defectBands': 'width bands with a box-model defect',
   'content.placeholderText': 'placeholder / lorem text',
   'content.deadLinks': 'dead (#) links',
   'typeScale.unscaled': 'headings with no mobile type scale',

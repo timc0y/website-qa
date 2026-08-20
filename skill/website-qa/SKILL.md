@@ -108,6 +108,9 @@ reviewed project's approved private folder. Reuse output roots for comparison.
 | `--baseline=./qa-run/<timestamp>` / `--no-baseline` | Named comparison or none. |
 | `--external-links` | Check external destinations. |
 | `--channel=chrome` | Installed Chrome instead of bundled Chromium. |
+| `--perturb[=longWord,…]` `--perturb-breakpoints=1512,393` | Vary the inputs a site actually varies and re-measure: a longer unbreakable word, copy 50% longer, the webfont unavailable, text zoom at 200%, images absent. Reports what each change CAUSES — findings absent from the page as served. Opt-in: one reload per perturbation per width. |
+| `--why-css` | Name the declaration behind each finding (rule, property, value, line) through the debugger protocol. Chromium only; recorded as a capability and its absence as a limitation. |
+| `--sweep=24` / `--no-sweep` | Width sweep, **on by default at 64px**: walks every step in the breakpoint range running the box-model checks, reports each defect as the width RANGE it exists in, and marks anything the breakpoint list would have stepped over. Lone stops are re-probed ±step/3, so a coarse step narrows a band rather than hiding it. Runs in every engine, so a range present in one engine only is reported as a browser difference. |
 
 ## Execution
 
@@ -127,6 +130,88 @@ reviewed project's approved private folder. Reuse output roots for comparison.
 The runner covers layout, content/setup, accessibility, controls, non-submitting
 form checks, requests/console/fonts/images/layout movement, visual evidence,
 run-to-run regressions, and cross-page template differences.
+
+### Who owns what
+
+One file, one question. Adding a check is one file plus one row in
+`runner/lib/registry.mjs`, which declares what each audit produces — the finding
+arrays, their report labels, how they are counted between runs and how one is
+identified across runs. The runner, the regression diff, the finding index and the
+summary all read that declaration; before it existed, adding one detector meant
+five edits and forgetting any one of them made the finding vanish silently.
+
+| owner | question |
+|---|---|
+| `audit_roles.js` | what KIND of thing is this — track, slide, scrim, sticky, closed panel, hover-reveal, marquee, decoration — inferred from shape and behaviour, never class names. Runs first; everything else consults `window.__WQA_ROLES`. |
+| `audit_layout.js` | does the geometry hold: viewport, parent, collision, collapse. |
+| `audit_slack.js` | does it FIT, and by how much — the fragility map, plus its zero and negative cases. |
+| `runner/lib/perturb.mjs` | what breaks when an input changes. |
+| `runner/lib/attribution.mjs` | which declaration caused it. |
+| `runner/lib/impact.mjs` | which findings matter most, measured in content a reader loses. |
+| `runner/lib/regress.mjs` | what changed since the last run. |
+| `runner/lib/vocab.mjs` | the only place selectors live, extended per run by `--vocabulary`. |
+
+Roles are why this generalises. A carousel is a carousel because near-equal
+children escape the box that clips them — true on Webflow, Framer, Shopify,
+Tailwind or hand-rolled CSS. A hover-slide is one because it *transitions*. Platform
+knowledge enters as a `--vocabulary` pack, which may only ADD candidates a shape
+test missed, never veto one it found. Every audit still runs alone in a console; with
+no role pass it falls back to class-name matching and says which it used.
+
+### The box-model family, and why a breakpoint list is not enough
+
+`audit_layout.js` asks four separate geometric questions, because a page that fits
+the viewport can still be visibly broken:
+
+- **viewport** — does anything cross the right edge (`horizontalOverflow`), and is
+  that a sideways scroll or a slice cut off by a clipping ancestor.
+- **parent** — does a child leave its own parent's box (`escapesParent`): either
+  `clipped`, so part of it is not on screen, or `spills`, so it paints over its
+  neighbours. A fixed-height card holding copy that grew lands here.
+- **collision** — does an out-of-flow box land on top of rendered text
+  (`overlappingContent`). Hand-placed absolute cards are tuned at one width and
+  collide at another; nothing overflows anything, so every other check is silent.
+- **fit** — can the text physically fit: one unbreakable token wider than its
+  container (`textCannotFit`, measured on the word, not estimated), `nowrap` text
+  that does not fit its box (`nowrapOverflow`), and boxes squashed under 4px while
+  still holding content (`nearlyCollapsed`).
+- **type on type** — two runs of text in the same pixels (`textCollisions`),
+  whatever put them there: a box that stopped growing with its content, a grid whose
+  rows collapsed, a caption placed at another width. Collisions are hit-tested by
+  scrolling the point into view, so a stack with an opaque layer between the two is
+  not reported as a collision; where the page cannot be window-scrolled (Lenis and
+  friends translate a wrapper instead) the finding says so and stays SUSPECTED.
+
+### Slack: the finding that has not happened yet
+
+`audit_slack.js` measures the distance to the next defect, not just the defects
+present. For every text box it compares the space available with the widest thing
+that cannot be broken — one word, a URL, a reference number — measured on rendered
+glyphs, and reports the headroom in **characters**, the unit of the person who will
+break it. Zero-slack cases surface as `textCannotFit` and `nowrapOverflow`; two
+characters of headroom on a nav label surfaces as `slackAtRisk`, which is not a
+defect and is the reason for one next month. Boxes allowed to break mid-word are
+excluded: their longest word cannot overflow.
+
+`--perturb` turns that from a measurement into an experiment. Each perturbation
+states its question ("what happens when an editor types a word longer than any
+currently on the page?"), is applied to this render only, and is undone by reloading
+— so every finding is a prediction with its cause attached, and the site is never
+touched.
+
+Two limits worth stating in the report rather than discovering later:
+
+- **Placement defects live between breakpoints.** A collision that exists from 992
+  to 1190px is invisible to `1920,1512,1280,991,…` — the default list steps over
+  the entire window. The sweep answers "does it break at any point" instead, and
+  runs by default. A finding that lands on a single stop is re-probed ±step/3
+  before it is judged: reproduced means a band narrower than the step, not
+  reproduced means the sweep's own scrolling caught a reveal mid-flight, and only
+  the latter is labelled SUSPECTED and kept out of the regression baseline.
+- **Closed shadow roots cannot be measured.** Text rendered inside a web component
+  (animated counters, third-party widgets) is invisible to `innerText` and to every
+  text check here. Open roots are traversed and reported against the light-DOM host;
+  closed ones are a stated gap, not a clean result.
 
 `audit_a11y_seo.js` also checks, per page: **heading hierarchy** (missing or
 duplicate `<h1>`, skipped levels — what a screen reader's or crawler's outline
