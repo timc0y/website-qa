@@ -1,5 +1,5 @@
 /*
- * live_probe.js — reusable browser-side helpers for Figma↔live QA.
+ * live_probe.js — framework-neutral browser helpers for Figma parity review.
  *
  * These are meant to be pasted into a browser MCP javascript_exec call. Each is
  * an IIFE-friendly snippet; copy the body you need, or define them once on the
@@ -10,10 +10,21 @@
 // ---------------------------------------------------------------------------
 // mapSections() — list top-level sections with geometry + a text snippet.
 // Returns { docHeight, viewport, sections:[{s,top,h,txt,bg}] }. Save as sections.json.
-// Tune the selector to the site; the default catches Webflow section patterns.
+// Tune the selector when the app has no semantic section boundaries.
 // ---------------------------------------------------------------------------
 (() => {
   const out = [], seen = new Set();
+  const selectorFor = el => {
+    if (el.id) return `#${CSS.escape(el.id)}`;
+    for (const attr of ['data-section', 'data-testid', 'aria-label']) {
+      const value = el.getAttribute(attr);
+      if (value) return `${el.tagName.toLowerCase()}[${attr}="${CSS.escape(value)}"]`;
+    }
+    const parent = el.parentElement;
+    const siblings = parent ? Array.from(parent.children).filter(node => node.tagName === el.tagName) : [];
+    const suffix = siblings.length > 1 ? `:nth-of-type(${siblings.indexOf(el) + 1})` : '';
+    return `${el.tagName.toLowerCase()}${suffix}`;
+  };
   document.querySelectorAll('section, .section, [data-section], footer, nav').forEach(el => {
     const r = el.getBoundingClientRect();
     const top = Math.round(r.top + window.scrollY);
@@ -22,7 +33,7 @@
     seen.add(key);
     const c = getComputedStyle(el);
     out.push({
-      s: el.tagName.toLowerCase() + (el.className ? '.' + el.className.toString().trim().split(/\s+/)[0] : ''),
+      s: selectorFor(el),
       top, h: Math.round(r.height),
       pt: c.paddingTop, pb: c.paddingBottom,
       bg: c.backgroundColor,
@@ -34,19 +45,28 @@
 })();
 
 // ---------------------------------------------------------------------------
-// showOnly(selector) — hide every other section so the target renders near the
-// top of the document, where browser-pane screenshots are reliable. Deep-scroll
-// captures frequently return blank white; this is the fix. Restore with showAll().
+// showOnly(selector) — temporarily hide sibling regions so a deep target renders
+// near the page top. Restore exact inline display values with showAll().
 // ---------------------------------------------------------------------------
 (() => {
-  const ALL = ['.hero','.hero-home','.trust-bar','.about-intro','.services','.compare',
-    '.who-help','.testi','.insights','.faq','.cta-start','.component_footer','footer'];
-  window.__qaAll = window.__qaAll || ALL;                 // edit to the real section list
-  window.showOnly = (sel) => { window.__qaAll.forEach(s => {
-    const el = document.querySelector(s); if (el) el.style.display = (s === sel) ? '' : 'none'; });
-    window.scrollTo(0, 0); return 'showing ' + sel; };
-  window.showAll = () => { window.__qaAll.forEach(s => {
-    const el = document.querySelector(s); if (el) el.style.display = ''; }); return 'restored'; };
+  window.showOnly = sel => {
+    const target = document.querySelector(sel);
+    if (!target) return 'not found: ' + sel;
+    window.__parityHidden = [];
+    document.querySelectorAll('body > *, main > section, main > [data-section]').forEach(el => {
+      if (el === target || el.contains(target) || target.contains(el)) return;
+      window.__parityHidden.push([el, el.style.display, el.style.getPropertyPriority('display')]);
+      el.style.setProperty('display', 'none', 'important');
+    });
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    return { showing: sel, hidden: window.__parityHidden.length };
+  };
+  window.showAll = () => {
+    const hidden = window.__parityHidden || [];
+    hidden.forEach(([el, display, priority]) => { el.style.setProperty('display', display, priority); });
+    window.__parityHidden = [];
+    return { restored: hidden.length };
+  };
   return 'helpers ready: showOnly(sel), showAll()';
 })();
 
@@ -87,24 +107,9 @@
 })(/* '.services a' */ '');
 
 // ---------------------------------------------------------------------------
-// forcePanel(selector) — reveal a Webflow IX2 dropdown/mega-menu panel that is
-// display:none and won't open on synthetic hover. Lets you QA its layout/content.
-// NOTE: interaction-driven changes elsewhere (nav theme swap) will NOT fire —
-// flag those as "needs manual hover".
-// ---------------------------------------------------------------------------
-((sel) => {
-  const p = document.querySelector(sel);
-  if (!p) return 'no panel: ' + sel;
-  Object.assign(p.style, { display: 'block', opacity: '1', visibility: 'visible', pointerEvents: 'auto' });
-  const r = p.getBoundingClientRect();
-  return { shown: sel, w: Math.round(r.width), h: Math.round(r.height), top: Math.round(r.top) };
-})(/* '.nav_panel-who' */ '');
-
-// ---------------------------------------------------------------------------
 // hideOverlays() — hide dev/QA/chat widgets that obscure captures (dev-mode
-// chips, Marker.io, Intercom, cookie bars). ALWAYS run before screenshotting a
-// panel/section: an overlay sitting over content is the classic cause of a
-// false "this element is missing" finding.
+// chips, Marker.io, Intercom, cookie bars). Inspect and record what will be hidden
+// before calling this; a consent dialog may be part of the requested state.
 // ---------------------------------------------------------------------------
 (() => {
   window.hideOverlays = () => {
@@ -114,7 +119,7 @@
     let n = 0; document.querySelectorAll(sels.join(',')).forEach(e => { e.style.setProperty('display','none','important'); n++; });
     return 'hid ' + n + ' overlay(s)';
   };
-  return 'ready: hideOverlays()';
+  return 'ready: inspect candidate overlays, then call hideOverlays() and record the result';
 })();
 
 // ---------------------------------------------------------------------------

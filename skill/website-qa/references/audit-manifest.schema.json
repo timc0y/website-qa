@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "website-qa audit manifest",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "provider",
+    "generatedAt",
+    "targetUrls",
+    "execution",
+    "configuration",
+    "artifacts",
+    "evidence",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "provider": { "const": "website-qa" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "targetUrls": {
+      "type": "array",
+      "items": { "type": "string", "format": "uri" }
+    },
+    "execution": {
+      "type": "object",
+      "required": ["mode", "capabilities"],
+      "properties": {
+        "mode": { "enum": ["local-runner", "interactive-browser", "forge-evidence"] },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": { "type": "boolean" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "configuration": { "type": "object" },
+    "artifacts": {
+      "type": "object",
+      "required": ["findings", "summary"],
+      "additionalProperties": { "type": ["string", "null"] }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["url", "kind", "state", "breakpoint", "viewport", "path", "settled", "reviewable"],
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "kind": { "const": "tile" },
+          "state": { "type": "string" },
+          "breakpoint": { "type": "integer", "minimum": 1 },
+          "viewport": {
+            "type": ["object", "null"],
+            "properties": {
+              "width": { "type": "integer", "minimum": 1 },
+              "height": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["width", "height"],
+            "additionalProperties": false
+          },
+          "path": { "type": "string", "minLength": 1 },
+          "scrollY": { "type": ["number", "null"] },
+          "settled": { "type": "boolean" },
+          "reviewable": { "type": "boolean" },
+          "headings": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "limitations": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

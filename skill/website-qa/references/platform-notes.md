@@ -128,7 +128,7 @@ way this class shows up at all in automation.
 Cross-browser rendering (Safari/iOS specifics), z-index "dropdown behind footer"
 overlaps, "banner not filling viewport" intent, backend/CRM failures, JS field
 behaviour (comma-on-blur), and anything needing a design reference (exact spacing,
-"match Figma") — that last one needs a separate design-reference comparison pass.
+"match Figma") — that last one is the **figma-parity** skill's job.
 
 ## Platform-specific detectors are additive
 

@@ -9,8 +9,8 @@ description: >-
   Astro, static HTML, React/Next, WordPress, Shopify, and Webflow. Drives a real
   browser through hover, click, scroll, keyboard, and responsive states, verifies
   automated findings visually, compares repeat runs for regressions, and produces
-  a severity-ranked report. When a design reference exists, pair the sweep with
-  a separate design-to-live comparison workflow.
+  a severity-ranked report. Use figma-parity as well when the site must be compared
+  with a Figma design.
 ---
 
 # Website QA
@@ -95,7 +95,13 @@ down". A goto timeout on a page whose document did load is reported as
 `networkNeverIdle`, not as a page error — if you see that flag, the wait strategy
 was wrong, not the site.
 
-## Two ways to run
+## Choose an execution mode
+
+Prefer the local runner for a complete sweep. Use an interactive browser for authenticated
+or already-open state. When Forge tools are installed, Forge may supply remote screenshot
+and accessibility evidence, but that reduced mode does not execute the runner. Read
+`references/execution-modes.md` before using either non-local branch; it defines the
+capability and independence boundaries shared with external consumers such as Parallax.
 
 **A) Headless runner (recommended).** `runner/qa_runner.mjs` drives a real browser
 the way a reviewer would: loads every breakpoint, **hovers** interactive elements,
@@ -132,8 +138,12 @@ Useful flags:
 | `--channel=chrome` | use installed Chrome instead of bundled Chromium |
 
 Writes `<out>/<ts>/…/findings.json`, `summary.md`, `regressions.json`,
-`fullpage-<width>.png` per breakpoint, and `states/*.png` for every panel it opened. Exit
-code is non-zero when a high-signal defect is found.
+`fullpage-<width>.png` per breakpoint, and `states/*.png` for every panel it opened. It
+also writes `audit-manifest.json`: a provider-neutral index of the run configuration,
+artifacts, limitations, and reviewable viewport tiles for any external review system that
+wants to ingest the evidence. The manifest does not promote heuristics into verified
+findings; its contract is `references/audit-manifest.schema.json`. Exit code is non-zero
+when a high-signal defect is found.
 
 **Keep `--out` pointing at the same directory across runs.** That is what makes the
 run-to-run diff possible: each run is a timestamped folder, and the newest previous one
@@ -144,6 +154,13 @@ valuable comparison the tool can make.
 call. Use this for a page the runner can't reach (auth) or when you're already
 driving the browser. Same scripts, same findings — but you lose the interaction,
 link, load-shift and cross-browser phases, which are where a lot of the value is.
+
+**C) Forge evidence (optional reduced mode).** Invoke Forge's `website-qa` prompt or
+`forge_review` for representative routes and phone/desktop captures when remote evidence
+is the useful path. Inspect every returned image. Preserve the Forge packet as provider
+`forge`, label the review `forge-evidence`, and name every full-runner capability that did
+not execute. Forge and Parallax are optional consumers/providers; this skill runs without
+either one.
 
 ## What runs where
 
@@ -171,6 +188,19 @@ link, load-shift and cross-browser phases, which are where a lot of the value is
   drift.
 - `scripts/audit_transitions.js` — `auditCssStates()` finds state changes with no
   transition covering them; `qaSnap`/`qaDiff` for manual hover diffing.
+- `scripts/audit_css_quality.mjs` — **the rules, not the pixels.** Every other audit here
+  reads computed values on elements, which cannot see that two rules should have been one.
+  This one reads the CSSOM: byte-identical declaration blocks under different selectors,
+  large shared subsets that point at a missing base class, literals that exactly equal an
+  existing custom property, near-duplicate values (`#f2f5fa` vs `#f3f5fa`,
+  `line-height: 1.14` vs `1.15` — this found a real design-token drift on a live site),
+  value sprawl, `!important` hotspots, and unreferenced custom properties.
+  **Everything it reports is advisory code quality, capped at Low severity, and belongs in
+  its own clearly-labelled section** — a maintainer who finds "merge these classes" filed
+  next to "the gradient is upside down" trusts neither. Read
+  [`references/css-quality.md`](references/css-quality.md) first: CSSOM shorthand expansion,
+  value-only token matching and pairwise reporting each produced badly wrong output while
+  it was being built, and the doc names the fix for each.
 - `scripts/audit_cascade.js` — **a computed value with nothing in the cascade to explain
   it.** The motivating case: an `<h1>` computing `display: inline`, no author rule setting
   `display` anywhere, UA default `block` — headings running into the text after them while
@@ -189,7 +219,7 @@ link, load-shift and cross-browser phases, which are where a lot of the value is
   weight / colour / letter-spacing / x-position against a spec file, matching
   elements by rendered text. Without it the sweep can say "these sections
   disagree"; with it, "every section is 16px too tight".
-  The format is defined once at
+  The format is defined at
   [`references/design-spec.md`](references/design-spec.md) — a spec may already exist for the
   page, written when it was built, in which case **use that one rather than deriving your
   own**. Re-deriving it means this review is re-interpreting the design instead of checking
@@ -313,6 +343,9 @@ link, load-shift and cross-browser phases, which are where a lot of the value is
   QA tools, scripts, and services. Read it before adding a dependency, designing a
   new runner phase, or selecting whole-site crawl, visual-baseline, security,
   privacy, field-performance, real-device, or Astro-specific coverage.
+- `references/css-quality.md` — how to read `audit_css_quality.mjs`, what to trust in it,
+  and the six ways it produced wrong output before those were fixed. Also the framing that
+  makes this class land: name the abstraction the codebase is missing, not the count.
 - `references/false-positives.md` — every wrong finding, its cause, its fix, and the five
   shapes they all reduce to. The highest-value file here after the mindset doc.
 - `references/vision-qa.md` — the vision protocol: what only eyes catch, the five
@@ -320,12 +353,12 @@ link, load-shift and cross-browser phases, which are where a lot of the value is
   band, engine lazy-load thresholds).
 - `references/reviewer-mindset.md` — the reasoning; read it first, and add to it
   whenever a real QA list catches something the scripts didn't.
-- [`references/design-spec.md`](references/design-spec.md) — the spec format itself, written
-  by whoever builds the page and read here.
+- [`references/design-spec.md`](references/design-spec.md) — the self-contained spec format,
+  written by whoever builds the page and read here.
   Prefer an existing spec over deriving a new one.
 - `references/design-spec-format.md` — how *this runner* consumes a spec: text matching,
   tolerances, and reading the output.
 - Sprawl thresholds are advisory: >~12 font sizes or >~8 text colours usually means
   an inconsistent scale, not necessarily a bug.
 - QA is read-only. Never submit forms, mutate content, publish, or change the site.
-- Design accuracy against a mockup needs a separate design-reference comparison pass.
+- Design accuracy against a Figma source is **figma-parity**'s job — run both.

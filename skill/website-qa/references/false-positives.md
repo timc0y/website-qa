@@ -142,6 +142,62 @@ Nearly everything below is one of these. When you write a check, ask which one i
   missed three dead ones carrying `data-w-id`. Only `ctaClickAudit` settles it, and when it
   has run the runner suppresses the DOM suspicion entirely.
 
+## `target="_blank"` CTAs read as dead
+
+**Symptom.** Two valid external “Member login” links were reported as DEAD even though
+their `href` values were correct and clicking them opened the community site.
+
+**Root cause.** The click audit watched only the current page's URL, history, dialogs and
+DOM. A new browsing context leaves all four unchanged, which is observationally identical
+to a dead click if the browser context itself is ignored.
+
+**Fix.** Listen for a new Playwright `page` event around every CTA click, record its URL,
+and close the probe page before testing the next candidate. Clicking remains the authority;
+the observation boundary now includes every browsing context the click can create.
+
+## Scroll audit checked before smooth scrolling moved
+
+**Symptom.** The mobile scroll phase recorded zero steps and then reported ten lazy images
+as never loaded on a page whose visual captures plainly contained the images.
+
+**Root cause.** Two state leaks had the same symptom. Open-state probes can retain a menu's
+`overflow:hidden` lock, and same-route navigation can restore a previous scroll position.
+After those were reset, this site still returned zero because its CSS enables smooth
+scrolling: the audit called `scrollBy()` and read `scrollY` in the same JavaScript frame,
+before the animated movement began.
+
+**Fix.** Reload between stateful phases, explicitly start at `scrollY=0`, request instant
+scrolling, and read the position after the browser applies it. Then bring unresolved lazy
+images into view individually and only report images that have completed with no natural
+size. The live regression moved from 0 steps/10 false failures to 22 desktop and 39 mobile
+steps with zero failed lazy images.
+
+## Hidden cart form audited as a visible broken form
+
+**Symptom.** A closed cart's discount form was reported as containing no visible fields and
+having no success/error UI during a home-page review.
+
+**Root cause.** The form existed in the DOM inside a hidden panel. Its visible-field filter
+correctly returned zero, but the form itself had never passed a visibility gate—“not on the
+page” masquerading as an empty component.
+
+**Fix.** Audit visible forms in the current state and record hidden forms as deferred. Open
+states may be audited separately. Absence of a static success/error node is SUSPECTED until
+an authorised submission path is exercised; modern apps often render feedback only after a
+response.
+
+## A visual tile cap silently covered only the top of a long page
+
+**Symptom.** Fourteen mobile tiles sounded substantial but covered only the first 10,808px
+of a 23,874px page. The footer and most lower content had no viewport evidence.
+
+**Root cause.** The cap retained the first N contiguous offsets. A resource budget was
+implemented as top-of-page priority, and “tail not reviewed” was easy to overlook.
+
+**Fix.** When contiguous coverage exceeds the cap, spread offsets evenly from the first to
+the final viewport and label the result `sampledAt`. This proves representative coverage,
+including the tail, while explicitly preserving the gaps as limitations.
+
 ## The rule that generates all of the above
 
 **Before reporting a difference or an absence, ask what would have had to be true for it to
@@ -334,3 +390,109 @@ confirmed and the height still diverges.
 fixed header over scrolled content, and a component's own designed overlay, both look
 identical to a genuine z-index bug to a pure DOM occlusion check, and both need a picture to
 rule out.
+
+## `display: contents` parents make every child look like it overflows
+
+**Symptom.** 314 of 428 text findings on one site were `overflows-parent`, on
+`h3.blog-card_title` and `div.blog-card_date` across 23 pages, and on
+`div.team-page_pill` at every breakpoint — each "overflowing its parent" by
+373–830px. The mobile insights cards had already been reviewed by eye and looked
+perfect.
+
+**Root cause.** The parent was `div.u-display-contents` — `display: contents`.
+Such an element generates no box, so `getBoundingClientRect()` returns
+**0×0 at 0,0**, and *any* child therefore extends past its right edge by its full
+width. Same trap for any zero-size wrapper.
+
+**Fix.** Before comparing a child against a parent's box, walk up to the first
+ancestor that actually **has** a box (`display !== 'contents'` and `width >= 1`).
+Compare against that. A parent-overflow check that doesn't do this reports its
+loudest findings on the healthiest markup, because `display: contents` is exactly
+what a well-built CMS wrapper uses.
+
+## Content inside a horizontal scroller is not overflowing
+
+**Symptom.** `<td>`/`<th>` in rich-text articles reported as extending 22–334px
+past the viewport at 393px; a tab label ("Multiple Directors") reported 171px past
+the viewport on 8 pages.
+
+**Root cause.** Both sat inside an ancestor with `overflow-x: auto` — a
+deliberately scrollable table wrapper and a scrollable tab strip. That is the
+*correct* responsive handling for a wide table, and `documentElement.scrollWidth`
+confirmed **zero page-level overflow** in both cases.
+
+**Fix.** For any "past the viewport" or "overflows parent" check, walk the
+ancestors for `overflow-x: auto|scroll` first. If one is found, the content is
+reachable by design — report it, if at all, as a separate and much softer class
+("requires horizontal scroll; is there a scroll affordance?"), never as overflow.
+Cross-check against document-level overflow: if the page itself doesn't scroll
+sideways, nothing is escaping the layout.
+
+## `line-height` smaller than `font-size` is usually deliberate display leading
+
+**Symptom.** `lineheight-lt-fontsize` on every article `<h1>` and an About `<h2>`:
+line-height 3.5–6.2px *less* than font-size.
+
+**Root cause.** The design uses `line-height: 0.9` for large display headings —
+a normal editorial choice, and the site's own token list contains `0.9`. Tight
+leading only becomes a defect when ascenders and descenders actually collide on a
+multi-line heading.
+
+**Fix.** Keep the measurement, but do not report it as a defect without a
+screenshot of a **multi-line** instance showing real collision. Otherwise it is at
+most a Low note ("check descender clearance at ≥2 lines").
+
+## A visually-hidden utility is *supposed* to be clipped
+
+**Symptom.** 65 `text-clipped-x` plus 65 `text-clipped-y` findings on
+`span.u-visually-hidden` inside every carousel.
+
+**Root cause.** That is the accessible-name pattern: a 1px clipped box holding
+text for screen readers. Clipping is the mechanism, not a bug.
+
+**Fix.** Exclude `u-visually-hidden` / `sr-only` / `visually-hidden` class
+conventions from all clipping and overflow checks.
+
+## Off-screen carousel slides are not "past the viewport"
+
+**Symptom.** 729 `past-viewport` findings, dominated by `testi_quote`,
+`testi_tag`, `benefits_card-title`, `services_card-title` at every width.
+
+**Root cause.** They are the not-yet-visible slides of a horizontal carousel.
+Living beyond the right edge of the viewport is the entire point.
+
+**Fix.** Exclude anything inside `[data-carousel-viewport]`, a `*_track`, or a
+known slider container before running viewport-bounds checks. On the site that
+produced this, excluding carousels, visually-hidden spans, nav panels and the logo
+marquee took the raw count from 2,100 to 428 — and the survivors were the real
+findings.
+
+## `scrollWidth > clientWidth` is not overflow when nothing clips
+
+**Symptom.** `h1.team-page_name` reported as overflowing by 18px ("Placeholder
+Person") and 5px ("Alex Ogden").
+
+**Root cause.** `overflow-x: visible`, `white-space: normal`, and zero
+document-level horizontal overflow. The heading wraps normally; its widest word
+simply extends a few px past the content box and paints fine, with hundreds of px
+of clear space to its right.
+
+**Fix.** An overflow metric is only a defect when something **clips** it
+(`overflow: hidden|clip`, `text-overflow: ellipsis`) or the **page** gains a
+horizontal scrollbar. With `overflow: visible` and no page overflow, report
+nothing. Check the clipping context before believing the delta.
+
+## Reveal animations make one-shot layout measurements lie
+
+**Symptom.** `who-help_card-title/text/link` reported 96px past the viewport at
+1512px on one page — a confident, specific number.
+
+**Root cause.** The sweep measured immediately after a scroll pass, while an IX2
+scroll-reveal still had the group translated. A targeted re-measure put every
+title at x 166–389 inside a 1527px viewport, with zero page overflow.
+
+**Fix.** On a site with scroll-triggered reveals, let transforms settle before
+measuring geometry (or read `data-anim-ready`-style state), and treat any
+single-page, single-width geometry finding as provisional until re-measured. This
+is the same class as the mid-animation screenshot trap in `vision-qa.md`, but it
+bites measurements too, not just pictures.

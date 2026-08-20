@@ -1,0 +1,4 @@
+interface:
+  display_name: "Figma Parity"
+  short_description: "Compare rendered interfaces with Figma"
+  default_prompt: "Use $figma-parity to compare this implementation with its exact Figma frames and states."

@@ -13,9 +13,11 @@
  *   node tests/check-fixtures.mjs
  */
 import { chromium } from 'playwright';
-import { readFileSync } from 'fs';
+import { mkdtempSync, readFileSync, rmSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { tmpdir } from 'os';
+import { createServer } from 'http';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const script = n => readFileSync(join(HERE, '..', 'scripts', n), 'utf8');
@@ -138,6 +140,85 @@ for (const [label, html, expectFindings] of [['defective form', FORM_BAD, true],
   console.log(`${ok ? '✓' : '✗'} formAudit — ${label}: ${r.forms} form(s), ${n} finding(s)`);
   if (expectFindings) r.findings.slice(0, 6).forEach(f => console.log(`      ${f.severity}: ${f.issue.slice(0, 88)}`));
   else r.findings.forEach(f => console.log(`      FALSE POSITIVE → ${f.issue.slice(0, 88)}`));
+  ok ? pass++ : fail++;
+}
+
+await page.setContent(`<div style="display:none"><form name="cart"><button type="submit">Apply</button></form></div>`);
+{
+  const r = await formAudit(page);
+  const ok = r.forms === 0 && r.hiddenFormsDeferred === 1 && r.findings.length === 0;
+  console.log(`${ok ? '✓' : '✗'} formAudit — hidden form is deferred, not reported as a broken visible form`);
+  ok ? pass++ : fail++;
+}
+
+await page.setContent(`<form name="redirecting" data-redirect="/thanks"><label>Email<input name="email" type="email"></label><button type="submit">Send</button></form>`);
+{
+  const r = await formAudit(page, { testBlurValidation: false });
+  const ok = !r.findings.some(f => /success state/i.test(f.issue));
+  console.log(`${ok ? '✓' : '✗'} formAudit — redirect-only success path does not require a static success node`);
+  ok ? pass++ : fail++;
+}
+
+/* A valid target=_blank link changes browsing context, not the current page. This exact
+ * shape was reported DEAD on a live site until the click audit watched popup pages. */
+const { ctaClickAudit, scrollAudit } = await import('../runner/lib/interact.mjs');
+const server = createServer((req, res) => {
+  res.setHeader('content-type', 'text/html');
+  res.end(req.url === '/next' ? '<h1>Destination</h1>' : '<a class="btn" target="_blank" href="/next">Member login</a>');
+});
+await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+{
+  const address = server.address();
+  const url = `http://127.0.0.1:${address.port}/`;
+  await page.goto(url);
+  const r = await ctaClickAudit(page, { url, settleMs: 100, vocab: { ctaLike: 'a.btn', ctaExclude: 'form' } });
+  const ok = r.dead.length === 0 && r.results[0]?.verdict.startsWith('opens a new page');
+  console.log(`${ok ? '✓' : '✗'} ctaClickAudit — target=_blank is a responding CTA`);
+  ok ? pass++ : fail++;
+}
+await new Promise(resolve => server.close(resolve));
+
+await page.setContent('<style>html{scroll-behavior:smooth}</style><main style="height:4000px">Long page</main>');
+await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+{
+  const r = await scrollAudit(page, { step: 500, maxSteps: 3 });
+  const ok = r.scrollSteps === 3;
+  console.log(`${ok ? '✓' : '✗'} scrollAudit — resets same-route scroll restoration to the top`);
+  ok ? pass++ : fail++;
+}
+
+/* A visual cap must sample the full document, including its final viewport. */
+const { visionCapture } = await import('../runner/lib/vision.mjs');
+const visionDir = mkdtempSync(join(tmpdir(), 'website-qa-vision-'));
+await page.setViewportSize({ width: 390, height: 500 });
+await page.setContent('<main style="height:6000px;background:linear-gradient(#fff,#000)"><h1>Top</h1></main><footer style="height:200px">Footer</footer>');
+{
+  const r = await visionCapture(page, { dir: visionDir, width: 390, maxTiles: 4, settleMs: 10, hideOverlays: false });
+  const last = r.tiles.at(-1)?.scrollY;
+  const ok = r.tiles.length === 4 && last === r.docHeight - r.viewportHeight && !!r.sampledAt;
+  console.log(`${ok ? '✓' : '✗'} visionCapture — capped tiles include the page tail`);
+  ok ? pass++ : fail++;
+}
+rmSync(visionDir, { recursive: true, force: true });
+
+const { summarizeConsole } = await import('../runner/lib/console.mjs');
+{
+  const r = summarizeConsole([
+    { type: 'error', text: 'Blocked inline script abc', sourceUrl: 'https://site.test/' },
+    { type: 'error', text: 'Blocked inline script abc', sourceUrl: 'https://site.test/' },
+    { type: 'error', text: "Access to XMLHttpRequest at 'https://tracker.test/pixel' from origin 'https://site.test' was blocked", sourceUrl: 'https://site.test/' }
+  ], 'https://site.test/');
+  const ok = r.events === 3 && r.unique === 2 && r.firstPartyEvents === 2 && r.thirdPartyEvents === 1 &&
+    Array.isArray(r.groups) && r.groups.length === 2;
+  console.log(`${ok ? '✓' : '✗'} console summary — de-duplicates and attributes origin`);
+  ok ? pass++ : fail++;
+}
+{
+  const r = summarizeConsole([{ type: 'error',
+    text: "Executing inline script violates script-src 'self' https://cdn.example.test",
+    sourceUrl: 'https://site.test/' }], 'https://site.test/');
+  const ok = r.firstPartyEvents === 1 && r.thirdPartyEvents === 0;
+  console.log(`${ok ? '✓' : '✗'} console summary — CSP allowlist URLs do not steal origin attribution`);
   ok ? pass++ : fail++;
 }
 

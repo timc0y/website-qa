@@ -515,6 +515,11 @@ export async function carouselAudit(page, { observeMs = 3500, vocab = DEFAULT_VO
  */
 export async function scrollAudit(page, { step = 600, maxSteps = 60, vocab = DEFAULT_VOCAB } = {}) {
   await inject(page);
+  // Same-URL reloads can restore the previous scroll position. Starting at the
+  // bottom makes the first scrollBy a no-op and turns the whole phase into a
+  // zero-step audit, so establish the state this phase claims to test.
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.waitForTimeout(100);
   // candidates for a scroll reveal: currently invisible but wired to IX2 / an animation
   await page.evaluate(({ REVEAL, STICKY }) => {
     window.__qa.stickySel = STICKY;
@@ -531,13 +536,33 @@ export async function scrollAudit(page, { step = 600, maxSteps = 60, vocab = DEF
   let steps = 0;
   const heights = [];
   for (; steps < maxSteps; steps++) {
-    const done = await page.evaluate(s => { const before = scrollY;
-      scrollBy(0, s); return { atEnd: scrollY === before, y: scrollY, h: document.body.scrollHeight }; }, step);
-    heights.push(done.h);
+    const before = await page.evaluate(() => scrollY);
+    await page.evaluate(s => scrollBy({ top: s, behavior: 'instant' }), step);
+    // Read after the browser has applied the scroll. Reading in the same evaluate
+    // call returns the old position on pages with scroll-behavior:smooth and falsely
+    // declares the very first step the end of the page.
     await page.waitForTimeout(160);
+    const done = await page.evaluate(previous => ({ atEnd: scrollY === previous,
+      y: scrollY, h: document.body.scrollHeight }), before);
+    heights.push(done.h);
     if (done.atEnd) break;
   }
   await page.waitForTimeout(700);   // let the last reveals finish
+
+  // A global naturalWidth snapshot is not evidence that a lazy image is broken:
+  // the engine may not have considered it near enough to request. Put each unresolved
+  // image in view, wait for decode/load, and only let completed failures survive.
+  await page.evaluate(async () => {
+    const unresolved = Array.from(document.images)
+      .filter(i => i.getBoundingClientRect().width > 20 && i.naturalWidth === 0)
+      .slice(0, 12);
+    for (const image of unresolved) {
+      image.scrollIntoView({ block: 'center', behavior: 'instant' });
+      await new Promise(resolve => setTimeout(resolve, 350));
+      if (!image.complete && image.decode) await image.decode().catch(() => {});
+    }
+  });
+  await page.waitForTimeout(300);
 
   const after = await page.evaluate(() => {
     // reveals that are ON SCREEN yet still invisible = the animation never fired
@@ -554,7 +579,7 @@ export async function scrollAudit(page, { step = 600, maxSteps = 60, vocab = DEF
 
     // images that never resolved even after being scrolled into view
     const lazyBroken = Array.from(document.images)
-      .filter(i => i.getBoundingClientRect().width > 20 && i.naturalWidth === 0)
+      .filter(i => i.getBoundingClientRect().width > 20 && i.complete && i.naturalWidth === 0)
       .map(i => ({ src: (i.currentSrc || i.src || i.dataset.src || '(no src)').slice(-60),
         loading: i.loading, hint: 'still unloaded after scrolling into view' })).slice(0, 10);
 
@@ -716,8 +741,11 @@ export async function ctaClickAudit(page, { url, max = 18, settleMs = 1800, voca
       if (c.display === 'none' || c.visibility === 'hidden' || r.width < 24 || r.height < 12) return;
       // skip a candidate nested inside another candidate — the outer one is the control
       if (out.some(o => o.node !== el && o.node.contains(el))) return;
+      const anchor = el.closest('a[href]') || el.querySelector('a[href]');
       out.push({ node: el, rawIndex, text: (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 28),
         el: window.__qa.desc(el),
+        href: anchor?.href || null,
+        target: anchor?.target || null,
         // recorded, but never trusted on its own — see the comment above
         looksWired: !!(el.closest('a[href]') || el.tagName === 'BUTTON' || el.onclick ||
           el.getAttribute('href') || el.hasAttribute('data-w-id')) });
@@ -741,7 +769,14 @@ export async function ctaClickAudit(page, { url, max = 18, settleMs = 1800, voca
       dialogs: document.querySelectorAll('[role="dialog"],dialog[open],[class*="modal"]').length }));
     await loc.scrollIntoViewIfNeeded().catch(() => {});
     let clickErr = null;
+    // A target=_blank link responds in a new Page, leaving the current URL and DOM
+    // unchanged. Watching only the current page labelled valid external login links
+    // DEAD. Observe the browser context as well as this page, then close the probe page
+    // so one CTA cannot contaminate the next fresh-load check.
+    const popupPromise = page.context().waitForEvent('page', { timeout: c.target === '_blank' ? settleMs + 1000 : 450 }).catch(() => null);
     await loc.click({ timeout: 4000 }).catch(e => { clickErr = String(e.message || e).split('\n')[0].slice(0, 80); });
+    const popup = clickErr ? null : await popupPromise;
+    const popupUrl = popup ? await popup.url() : null;
     await page.waitForTimeout(settleMs);
     const after = await page.evaluate(() => ({ url: location.href, hash: location.hash,
       len: history.length, dom: document.body.innerHTML.length,
@@ -750,13 +785,15 @@ export async function ctaClickAudit(page, { url, max = 18, settleMs = 1800, voca
     const navigated = after.url !== before.url;
     const domDelta = Math.abs(after.dom - before.dom);
     const verdict = clickErr ? `could not be clicked — ${clickErr}`
+      : popup ? `opens a new page at ${popupUrl || '(URL not yet available)'}`
       : navigated ? `navigates to ${after.url.replace(/^https?:\/\/[^/]+/, '') || '/'}`
       : after.dialogs > before.dialogs ? 'opens a dialog/modal'
       : after.hash !== before.hash ? `jumps to ${after.hash}`
       : domDelta > 200 ? 'no navigation, but the page responded (DOM changed)'
       : after.len > before.len ? 'history changed but the page did not'
       : 'DEAD — click does nothing';
-    results.push({ ...c, verdict, domDelta });
+    results.push({ ...c, verdict, domDelta, popupUrl });
+    await popup?.close().catch(() => {});
   }
   const dead = results.filter(r => r.verdict.startsWith('DEAD'));
   return { tested: results.length, candidatesFound: candidates.length,

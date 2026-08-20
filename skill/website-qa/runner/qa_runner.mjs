@@ -23,8 +23,9 @@
  *     [--baseline=./qa-run/<ts>] [--no-baseline] [--no-interact] [--no-scroll]
  *
  * Output: <out>/<timestamp>/<host><path>/ with fullpage-<w>.png per breakpoint,
- * state-*.png per opened panel, findings.json and summary.md. Exit code is non-zero
- * if any high-signal defect is found (CI-friendly).
+ * state-*.png per opened panel, findings.json, summary.md and the provider-neutral
+ * audit-manifest.json evidence index. Exit code is non-zero if any high-signal
+ * defect is found (CI-friendly).
  *
  * Runs are diffed against the previous run in the same --out directory automatically,
  * and the result leads summary.md plus its own regressions.json. That comparison is
@@ -33,7 +34,7 @@
  */
 import { chromium, webkit, firefox } from 'playwright';
 import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'fs';
-import { dirname, join } from 'path';
+import { dirname, join, relative } from 'path';
 import { fileURLToPath } from 'url';
 import { hoverAudit, openStateAudit, dropdownExclusivity, carouselAudit, scrollAudit, keyboardAudit, ctaClickAudit } from './lib/interact.mjs';
 import { linkCheck, loadShiftAudit, engineProbes } from './lib/health.mjs';
@@ -42,6 +43,7 @@ import { formAudit } from './lib/forms.mjs';
 import { DEFAULT_VOCAB, loadVocab } from './lib/vocab.mjs';
 import { findBaseline, loadBaseline, diffRuns, renderRegressionSection } from './lib/regress.mjs';
 import { crossPageAudit, renderCrossPageSection } from './lib/crosspage.mjs';
+import { summarizeConsole } from './lib/console.mjs';
 
 const ENGINES = { chromium, webkit, firefox };
 
@@ -170,7 +172,10 @@ for (const url of urls) {
   const page = await browser.newPage();
   await seedVocab(page);
   const consoleMsgs = [], pageErrors = [], badResponses = [], failedReqs = [];
-  page.on('console', m => { if (['error', 'warning'].includes(m.type())) consoleMsgs.push({ type: m.type(), text: m.text().slice(0, 200) }); });
+  page.on('console', m => {
+    if (!['error', 'warning'].includes(m.type())) return;
+    consoleMsgs.push({ type: m.type(), text: m.text().slice(0, 500), sourceUrl: m.location().url || page.url() });
+  });
   page.on('pageerror', e => pageErrors.push(String(e).slice(0, 200)));
   /* Attribute every 4xx to an ORIGIN, because an unattributed count is not a
    * finding. One real sweep reported 66 4xx and ~139 console errors that were
@@ -268,7 +273,14 @@ for (const url of urls) {
       catch (e) { entry.interactions.mobile[name] = { error: String(e.message || e).slice(0, 120) }; } };
     const mshots = join(dir, 'states-mobile'); mkdirSync(mshots, { recursive: true });
     await mstep('openStates', () => openStateAudit(page, { layoutSrc: LAYOUT, shotDir: mshots, prefix: 'm-', vocab }));
-    if (doScroll) await mstep('scroll', () => scrollAudit(page, { vocab }));
+    // Open-state probes intentionally leave their last panel visible for its state
+    // screenshot. Reload before scrolling so a mobile menu's overflow:hidden lock
+    // cannot turn a full-page scroll audit into a zero-step false failure.
+    if (doScroll) {
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+      await page.waitForTimeout(waitMs);
+      await mstep('scroll', () => scrollAudit(page, { vocab }));
+    }
   }
 
   // ── design spec comparison, at the spec's own frame width ──────────────────
@@ -326,7 +338,16 @@ for (const url of urls) {
   // comparison across the widths we already visited catches the whole class.
   entry.typeScale = crossBreakpointType(entry.byBreakpoint, widths);
 
-  entry.console = { errors: consoleMsgs.filter(m => m.type === 'error'), warnings: consoleMsgs.filter(m => m.type === 'warning'), pageErrors };
+  const consoleErrors = consoleMsgs.filter(m => m.type === 'error');
+  const consoleWarnings = consoleMsgs.filter(m => m.type === 'warning');
+  entry.console = {
+    errors: consoleErrors,
+    warnings: consoleWarnings,
+    pageErrors,
+    pageErrorSummary: summarizeConsole(pageErrors.map(text => ({ type: 'pageerror', text, sourceUrl: url })), url),
+    errorSummary: summarizeConsole(consoleErrors, url),
+    warningSummary: summarizeConsole(consoleWarnings, url)
+  };
   entry.network = { badResponses, failedRequests: failedReqs };
   report.urls.push(entry);
   await page.close();
@@ -441,14 +462,15 @@ const dir = join(outRoot, ts);
  * computed over the whole report. Says so explicitly when given only one URL. */
 try { report.crossPage = crossPageAudit(report); } catch (e) { report.crossPage = { error: String(e.message || e) }; }
 writeFileSync(join(dir, 'findings.json'), JSON.stringify(report, null, 2));
+let visionManifests = [];
 if (doVision) {
-  const manifests = report.urls.map(e => ({ url: e.url, dir: e.dir, images: visionManifest(e) }));
-  writeFileSync(join(dir, 'vision-manifest.json'), JSON.stringify(manifests, null, 2));
+  visionManifests = report.urls.map(e => ({ url: e.url, dir: e.dir, images: visionManifest(e) }));
+  writeFileSync(join(dir, 'vision-manifest.json'), JSON.stringify(visionManifests, null, 2));
   /* The checklist is the vision pass made auditable: the same ordered questions against every
    * image, answered as data. Without it a review reports "what I noticed", which is neither
    * repeatable nor distinguishable from not having looked. */
   writeFileSync(join(dir, 'vision-checklist.json'), JSON.stringify(
-    manifests.map(m => {
+    visionManifests.map(m => {
       const e = report.urls.find(x => x.url === m.url) || {};
       const widths = Object.keys(e.vision || {});
       const sets = widths.length ? (e.vision[widths[0]].sets || []) : [];
@@ -650,7 +672,7 @@ for (const e of report.urls) {
       const secOk = (v.sections || []).filter(s => s.file).length, secBad = (v.sections || []).length - secOk;
       lines.push(`- ${w}px: ${v.tiles.length} tiles + ${secOk} section crops in \`${v.dir}/\` (page ${v.docHeight}px)` +
         (secBad ? ` — ⚠︎ ${secBad} section crop(s) FAILED, those sections have no image` : ''));
-      if (v.truncatedAt) lines.push(`  - ⚠︎ capture stopped at ${v.truncatedAt} — the tail of the page was NOT reviewed`);
+      if (v.sampledAt) lines.push(`  - ⚠︎ ${v.sampledAt} — first and final viewport are included, but the gaps are not contiguous visual coverage`);
       if (v.overlaysHidden?.length) lines.push(`  - overlays hidden for the shots (environment, not defects): ${v.overlaysHidden.join(', ')}`);
       const unsettled = (v.tiles || []).filter(t => t.settled === false);
       if (unsettled.length) lines.push(`  - ⚠︎ ${unsettled.length} tile(s) captured MID-ANIMATION and are unreviewable: ` +
@@ -729,6 +751,7 @@ for (const e of report.urls) {
     const f = e.forms;
     lines.push('', '### Forms (structure + validation — nothing was submitted)');
     lines.push(`- ${f.forms} form(s) found; ${f.findings.length} issue(s). ${f.note}`);
+    if (f.hiddenFormsDeferred) lines.push(`- ${f.hiddenFormsDeferred} hidden-state form(s) deferred; open that UI state before auditing them`);
     const bySev = s => f.findings.filter(x => x.severity === s);
     if (bySev('high').length) high++;
     ['high', 'medium', 'low'].forEach(s => bySev(s).slice(0, 6).forEach(x =>
@@ -740,7 +763,22 @@ for (const e of report.urls) {
       e.loadShift.shiftingElements.slice(0, 3).forEach(s =>
         lines.push(`  - ${s.el} moved up to ${s.maxMovedPx}px across ${s.shifts} shifts`)); }
   }
-  bullet('console errors', e.console.errors.length + e.console.pageErrors.length, true);
+  const cs = e.console.errorSummary;
+  if (cs) {
+    const ps = e.console.pageErrorSummary || summarizeConsole(
+      (e.console.pageErrors || []).map(text => ({ type: 'pageerror', text, sourceUrl: e.url })), e.url);
+    const firstPartyEvents = cs.firstPartyEvents + ps.firstPartyEvents;
+    const firstPartyUnique = cs.firstPartyUnique + ps.firstPartyUnique;
+    if (firstPartyEvents) {
+      high++;
+      lines.push(`- console errors (first-party): ${firstPartyEvents} event(s), ${firstPartyUnique} unique`);
+      [...cs.groups, ...ps.groups].filter(group => !group.thirdParty).slice(0, 4).forEach(group =>
+        lines.push(`  - ${group.count}× ${group.text.slice(0, 180)}`));
+    }
+    const thirdPartyEvents = cs.thirdPartyEvents + ps.thirdPartyEvents;
+    const thirdPartyUnique = cs.thirdPartyUnique + ps.thirdPartyUnique;
+    if (thirdPartyEvents) lines.push(`- console errors (third-party environment): ${thirdPartyEvents} event(s), ${thirdPartyUnique} unique`);
+  } else bullet('console errors', e.console.errors.length + e.console.pageErrors.length, true);
   const firstPartyBad = e.network.badResponses.filter(b => !b.thirdParty);
   bullet('4xx/5xx responses (first-party)', firstPartyBad.length, true);
   bullet('4xx/5xx responses (third-party — environment, not a defect)', e.network.badResponses.length - firstPartyBad.length, false);
@@ -788,6 +826,78 @@ for (const e of report.urls) {
   lines.push('');
 }
 writeFileSync(join(dir, 'summary.md'), lines.join('\n'));
+
+/* Provider-neutral handoff for review orchestrators. This is intentionally not
+ * a Parallax packet: website-qa remains standalone, while any consumer can map
+ * measured facts and durable screenshots into its own evidence model. Only
+ * reviewable viewport tiles are enumerated here; section, component and state
+ * crops remain discoverable through vision-manifest.json. Automated findings
+ * are candidate facts, never human-verified conclusions. */
+const auditManifest = {
+  schemaVersion: 1,
+  provider: 'website-qa',
+  generatedAt: report.generatedAt,
+  targetUrls: report.urls.map(entry => entry.url),
+  execution: {
+    mode: 'local-runner',
+    capabilities: {
+      screenshots: doVision,
+      responsive: widths.length > 1,
+      interactions: doInteract,
+      scrolling: doInteract && doScroll,
+      links: doLinks,
+      formsWithoutSubmission: !flag('no-forms'),
+      consoleAndNetwork: true,
+      crossBrowser: engines.length > 1,
+      regression: doBaseline
+    }
+  },
+  configuration: {
+    breakpoints: widths,
+    engines,
+    phases: {
+      interaction: doInteract,
+      scroll: doScroll,
+      links: doLinks,
+      vision: doVision,
+      baseline: doBaseline
+    },
+    visionBreakpoints: doVision ? visionWidths : [],
+    visionMaxTiles: doVision ? visionMaxTiles : 0
+  },
+  artifacts: {
+    findings: 'findings.json',
+    summary: 'summary.md',
+    regressions: regressionDiff ? 'regressions.json' : null,
+    visionManifest: doVision ? 'vision-manifest.json' : null,
+    visionChecklist: doVision ? 'vision-checklist.json' : null
+  },
+  evidence: visionManifests.flatMap(manifest => manifest.images
+    .filter(image => image.kind === 'tile' && image.reviewable !== false)
+    .map(image => {
+      const [width, height] = String(image.viewport || '').split('x').map(Number);
+      return {
+        url: manifest.url,
+        kind: image.kind,
+        state: 'entry',
+        breakpoint: image.breakpoint,
+        viewport: Number.isFinite(width) && Number.isFinite(height) ? { width, height } : null,
+        path: relative(dir, join(manifest.dir, 'vision', String(image.breakpoint), image.file)).split('\\').join('/'),
+        scrollY: image.scrollY ?? null,
+        settled: image.settled !== false,
+        reviewable: image.reviewable !== false,
+        headings: image.headings || []
+      };
+    })),
+  limitations: [
+    'Automated and heuristic findings require visual or interaction verification before they become review conclusions.',
+    ...(doVision && report.urls.some(entry => Object.values(entry.vision || {}).some(value => value?.sampledAt))
+      ? ['At least one long visual route was evenly sampled under the configured tile cap; first and final viewports are present, but intervening gaps are not contiguous coverage.']
+      : []),
+    ...(!doVision ? ['Visual evidence was not captured in this run.'] : [])
+  ]
+};
+writeFileSync(join(dir, 'audit-manifest.json'), JSON.stringify(auditManifest, null, 2));
 console.log(lines.join('\n'));
-console.log(`\nFull data: ${join(dir, 'findings.json')}\nScreenshots + summary in: ${dir}`);
+console.log(`\nFull data: ${join(dir, 'findings.json')}\nNeutral manifest: ${join(dir, 'audit-manifest.json')}\nScreenshots + summary in: ${dir}`);
 process.exit(high > 0 ? 1 : 0);

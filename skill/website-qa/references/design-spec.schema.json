@@ -1,0 +1,179 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://skills.local/website-quality/design-spec.schema.json",
+  "title": "Design spec",
+  "description": "Intended design values for a page, extracted from a design source before build and diffed against the built page afterwards. Normative definition: references/design-spec.md. Consumers must ignore unknown keys so producers and consumers can adopt fields independently.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "name": { "type": "string", "description": "Human label, e.g. 'Marketing site — About'." },
+    "source": {
+      "type": "object",
+      "description": "Provenance only. No consumer fetches this; it exists so a value can be traced back to the node it came from.",
+      "additionalProperties": true,
+      "properties": {
+        "kind": { "type": "string", "description": "Design tool or origin, e.g. 'figma', 'written-standard'." },
+        "fileKey": { "type": "string" },
+        "frames": {
+          "type": "object",
+          "description": "Breakpoint name → node id in the design source.",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "frameWidth": {
+      "type": "number",
+      "description": "Width of the design frame these values were read at. A consumer compares at this width; at any other, positions are scaled and that must be stated, because a scaled comparison is weaker evidence.",
+      "exclusiveMinimum": 0
+    },
+    "tolerance": {
+      "type": "object",
+      "description": "Per-category noise floors in px. Raise a noisy category rather than deleting its check.",
+      "additionalProperties": false,
+      "properties": {
+        "position": { "type": "number", "default": 4 },
+        "size": { "type": "number", "default": 2 },
+        "fontSize": { "type": "number", "default": 0.6 },
+        "lineHeight": { "type": "number", "default": 1.5 }
+      }
+    },
+    "container": {
+      "type": "object",
+      "description": "The intended content gutter — the highest-value single entry in the file.",
+      "additionalProperties": true,
+      "properties": {
+        "left": { "type": "number" },
+        "right": { "type": "number" },
+        "note": { "type": "string", "description": "How the value was decided. Future readers need this more than the number." }
+      }
+    },
+    "containerSelector": { "type": "string", "description": "Optional override for how a consumer finds section containers." },
+
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "name": { "type": "string" },
+          "anchorText": { "type": "string", "description": "A distinctive line of copy inside the section. Anchoring on text rather than order means adding a section does not shift every later comparison." },
+          "contentLeft": { "type": "number" },
+          "height": { "type": "number" },
+          "paddingTop": { "type": "number" },
+          "paddingBottom": { "type": "number" },
+          "reuse": {
+            "enum": ["new", "reused", "adapted"],
+            "description": "Reuse fails differently from building: an existing component dropped into a new context inherits geometry correctly and still breaks, because copy length, background or container width differ. 'reused' is a prompt to record what is different here."
+          },
+          "differences": {
+            "type": "array",
+            "description": "For a reused/adapted section: what differs in THIS context (longer copy, different fill, narrower container, different breakpoint behaviour).",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "text": {
+      "type": "array",
+      "description": "Per text node, matched on rendered words rather than selector — class names mean nothing across the design/build boundary.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["text"],
+        "properties": {
+          "text": { "type": "string" },
+          "fontSize": { "type": "number", "description": "px" },
+          "lineHeight": { "type": "number", "description": "≤4 is a multiplier ('0.9em'); >4 is px." },
+          "letterSpacing": { "type": "number", "description": "<1 is em ('-0.01em'); ≥1 is px." },
+          "fontFamily": { "type": "string" },
+          "fontWeight": { "type": ["number", "string"] },
+          "color": { "type": "string" },
+          "textCase": { "type": "string" },
+          "left": { "type": "number", "description": "x within the frame" },
+          "scope": { "enum": ["nav", "header", "footer", "body"], "description": "Page chrome is excluded by default: a mega-menu repeats site copy as shorter link labels, which resolves a heading to a nav link and reports the real heading as too small. Set this to opt an entry back in." }
+        }
+      }
+    },
+
+    "groups": {
+      "type": "array",
+      "description": "Named sets that look alike and differ in the design. Naming both forces the difference to exist — modelling two variants as one thing is how a variant silently gets built once.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "description": "Dotted, e.g. 'pill.include' / 'pill.exclude'." },
+          "fill": { "type": "string" },
+          "stroke": { "type": "string" },
+          "color": { "type": "string" },
+          "radius": { "type": "number" }
+        }
+      }
+    },
+
+    "states": {
+      "type": "array",
+      "description": "Every dynamically-bound field and what the layout does at each extreme. Templates are built against no content and empty is the normal case, so the empty state is a design state, not an edge case.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["field"],
+        "properties": {
+          "field": { "type": "string" },
+          "cases": { "type": "array", "items": { "enum": ["empty", "short", "long", "missing-media", "one-item", "many-items"] } },
+          "empty": { "type": "string" },
+          "short": { "type": "string" },
+          "long": { "type": "string" }
+        }
+      }
+    },
+
+    "decisions": {
+      "type": "array",
+      "description": "Every place the design and the existing system disagree, resolved explicitly at scope time. Resolved silently mid-build, each of these becomes a defect nobody can attribute later.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["issue"],
+        "properties": {
+          "issue": { "type": "string" },
+          "options": { "type": "array", "items": { "type": "string" } },
+          "chosen": { "type": "string" },
+          "by": { "type": "string", "description": "Who decided. An unattributed decision is an assumption." }
+        }
+      }
+    },
+
+    "sourceDefects": {
+      "type": "array",
+      "description": "Contradictions in the DESIGN source itself — a frame carrying another page's copy, one outlier font family, the same token in two colours, inconsistent gutters. Not build defects; reporting them as such wastes the reviewer's time. They belong to whoever owns the file.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["issue"],
+        "properties": {
+          "where": { "type": "string" },
+          "issue": { "type": "string" },
+          "resolution": { "type": "string", "description": "What was built instead, and why." }
+        }
+      }
+    },
+
+    "handoffs": {
+      "type": "array",
+      "description": "Steps the producer cannot perform, listed ONCE up front rather than discovered one interruption at a time.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["what"],
+        "properties": {
+          "what": { "type": "string" },
+          "why": { "type": "string" },
+          "done": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}
