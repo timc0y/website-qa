@@ -1,7 +1,7 @@
 # Using website-qa — operator's guide
 
 For a person at a terminal. The review *method* is in
-[`skill/website-qa/SKILL.md`](../skill/website-qa/SKILL.md) and the reasoning behind each
+[`skills/website-qa/SKILL.md`](../skills/website-qa/SKILL.md) and the reasoning behind each
 check is in its `references/`; this page is install, recipes, output, and what to do when
 something looks wrong.
 
@@ -17,7 +17,7 @@ Node 18 or newer. Chromium alone is enough to start; WebKit is needed for
 design tool. (A Figma read path is a `figma-parity` requirement, not this one.)
 
 No install is needed to use the audits interactively: every file in
-`skill/website-qa/scripts/` is a self-contained IIFE that can be pasted into a browser
+`skills/website-qa/scripts/` is a self-contained IIFE that can be pasted into a browser
 console and will return its findings. Paste `audit_roles.js` first — the others consult
 what it publishes and otherwise fall back to weaker class-name matching, which they
 report as `roleSource`.
@@ -38,14 +38,14 @@ interactions, links, vision capture, and a diff against the previous run in the 
 `--out` directory.
 
 ```sh
-node skill/website-qa/runner/qa_runner.mjs --url=https://example.com --out=qa-output
+node skills/website-qa/runner/qa_runner.mjs --url=https://example.com --out=qa-output
 ```
 
 **Check a template family properly.** Two URLs per dynamic family, or per-template
 metadata duplication cannot be checked at all.
 
 ```sh
-node skill/website-qa/runner/qa_runner.mjs \
+node skills/website-qa/runner/qa_runner.mjs \
   --url=https://example.com/team/ada --url=https://example.com/team/grace \
   --out=qa-output
 ```
@@ -54,26 +54,26 @@ node skill/website-qa/runner/qa_runner.mjs \
 64px step lands in only once; a 24px step bounds it.
 
 ```sh
-node skill/website-qa/runner/qa_runner.mjs --url=https://example.com --sweep=24 --out=qa-output
+node skills/website-qa/runner/qa_runner.mjs --url=https://example.com --sweep=24 --out=qa-output
 ```
 
 **Before a content handover or a translation.** Ask what the next edit breaks.
 
 ```sh
-node skill/website-qa/runner/qa_runner.mjs --url=https://example.com \
+node skills/website-qa/runner/qa_runner.mjs --url=https://example.com \
   --perturb --perturb-breakpoints=1512,393 --out=qa-output
 ```
 
 **Turn findings into fixes.** Name the declaration responsible (Chromium only).
 
 ```sh
-node skill/website-qa/runner/qa_runner.mjs --url=https://example.com --why-css --out=qa-output
+node skills/website-qa/runner/qa_runner.mjs --url=https://example.com --why-css --out=qa-output
 ```
 
 **Cross-engine.** The diff is the finding, not either engine's raw numbers.
 
 ```sh
-node skill/website-qa/runner/qa_runner.mjs --url=https://example.com \
+node skills/website-qa/runner/qa_runner.mjs --url=https://example.com \
   --engines=chromium,webkit --out=qa-output
 ```
 
@@ -84,7 +84,7 @@ and state — a fix confirmed under different conditions is not confirmed.
 **Fast pass** while iterating on a build:
 
 ```sh
-node skill/website-qa/runner/qa_runner.mjs --url=http://localhost:3000 \
+node skills/website-qa/runner/qa_runner.mjs --url=http://localhost:3000 \
   --no-interact --no-vision --no-links --no-baseline --out=qa-output
 ```
 

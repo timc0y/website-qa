@@ -12,19 +12,19 @@
   "skills": [
     {
       "name": "website-qa",
-      "path": "skill/website-qa",
+      "path": "skills/website-qa",
       "visibility": "public",
       "question": "Is the rendered website sound?"
     },
     {
       "name": "figma-parity",
-      "path": "skill/figma-parity",
+      "path": "skills/figma-parity",
       "visibility": "public",
       "question": "Does the rendered website match the approved design?"
     },
     {
       "name": "engine-behaviour",
-      "path": "skill/engine-behaviour",
+      "path": "skills/engine-behaviour",
       "visibility": "public",
       "question": "Why does this engine, device, or power state produce this symptom?"
     }

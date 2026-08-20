@@ -90,5 +90,53 @@ for (const entry of LAYOUT_FINDINGS.filter(e => e.severity === 'high')) {
     `${entry.array} is high severity and must appear in the summary line`);
 }
 
+/* ── engine diffs and the non-Chromium path ─────────────────────────────────────
+ * These were the least-tested judgements in the sweep: while `diffEngines`/`diffSweeps`
+ * lived inside the runner the only way to exercise them was a full two-engine run against
+ * a live site, and the Chromium-only capability was asserted by construction alone. Both
+ * are pure once extracted, and the CDP failure path needs no browser at all. */
+const { diffEngines, diffSweeps } = await import('../runner/lib/engines.mjs');
+{
+  const bpA = { 1512: { horizontalOverflow: { offenders: [1], pageScrollsSideways: false }, collapsedElements: [] } };
+  const bpB = { 1512: { horizontalOverflow: { offenders: [1], pageScrollsSideways: true }, collapsedElements: [] } };
+  const out = diffEngines(bpA, bpB, [1512], 'chromium', 'webkit');
+  assert.equal(out.length, 1, 'one metric differs');
+  assert.equal(out[0].metric, 'scrollsSideways');
+  assert.equal(out[0].chromium, 0);
+  assert.equal(out[0].webkit, 1);
+  assert.equal(diffEngines(bpA, bpA, [1512], 'chromium', 'webkit').length, 0,
+    'identical engines produce no difference');
+  // a breakpoint one engine failed to audit must not read as a difference
+  assert.equal(diffEngines(bpA, { 1512: { error: 'audit failed' } }, [1512], 'a', 'b').length, 0);
+}
+{
+  const a = { findings: [{ kind: 'overlappingContent', what: 'div.stat', range: '992–1120px' },
+                         { kind: 'escapesParent', what: 'div.card', range: '393px' }] };
+  const b = { findings: [{ kind: 'overlappingContent', what: 'div.stat', range: '1000–1100px' },
+                         { kind: 'clippedText', what: 'section.svc', range: '393–767px' }] };
+  const out = diffSweeps(a, b, 'chromium', 'webkit');
+  const only = out.filter(f => f.onlyIn);
+  assert.equal(only.length, 2, 'one band per engine appears in only one of them');
+  assert.ok(only.some(f => f.onlyIn === 'webkit' && f.kind === 'clippedText'),
+    'a band present only in the second engine is the finding');
+  /* A band that merely SHIFTED is the same defect. Reporting it as two would bury the real
+   * engine difference under noise, which is the whole reason identity excludes the range. */
+  const shifted = out.filter(f => !f.onlyIn);
+  assert.equal(shifted.length, 1);
+  assert.equal(shifted[0].kind, 'overlappingContent');
+  assert.equal(shifted[0].chromium, '992–1120px');
+  assert.equal(shifted[0].webkit, '1000–1100px');
+}
+{
+  /* No CDP — a WebKit or Firefox run. It must say so and return, never throw and never
+   * quietly report zero attributions as though it had looked. */
+  const { attributeFindings } = await import('../runner/lib/attribution.mjs');
+  const fakePage = { context: () => ({ newCDPSession: async () => { throw new Error('not supported'); } }) };
+  const res = await attributeFindings(fakePage, [{ el: 'div.card' }]);
+  assert.equal(res.available, false);
+  assert.match(res.why, /Chromium only/);
+  assert.equal(res.attributed, 0);
+}
+
 console.log('Website QA finding identities and attribution sidecars are stable and validated.');
 console.log(`Registry: ${FINDING_ARRAY_NAMES.length} finding arrays, ${AUDIT_METRICS.length} metrics — all indexed, diffable and labelled.`);

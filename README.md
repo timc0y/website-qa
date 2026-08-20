@@ -5,9 +5,9 @@ one question on its own and never claims evidence it did not inspect.
 
 | Skill | Question it answers | Needs |
 |---|---|---|
-| [`website-qa`](skill/website-qa/SKILL.md) | Is this website broken? | a URL |
-| [`figma-parity`](skill/figma-parity/SKILL.md) | Does it match these Figma nodes? | a URL, specific Figma nodes, and a Figma read path (Framelink) |
-| [`engine-behaviour`](skill/engine-behaviour/SKILL.md) | Why does this engine, device or power state cause this symptom? | a symptom |
+| [`website-qa`](skills/website-qa/SKILL.md) | Is this website broken? | a URL |
+| [`figma-parity`](skills/figma-parity/SKILL.md) | Does it match these Figma nodes? | a URL, specific Figma nodes, and a Figma read path (Framelink) |
+| [`engine-behaviour`](skills/engine-behaviour/SKILL.md) | Why does this engine, device or power state cause this symptom? | a symptom |
 
 They work on any rendered site — Webflow, Framer, Shopify, Next, Astro, hand-written
 HTML — because the checks look for **shapes and behaviour, never framework class
@@ -31,7 +31,7 @@ add candidates, never override what shape analysis found.
 | Figma read path | `figma-parity` only. It needs a tool that can read a Figma file — Framelink's Figma MCP (`get_figma_data`, `download_figma_images`) is the one it is used with, and it needs a Figma access token of its own. Not an npm dependency of this repository: no code here imports it, and `website-qa` does not need it at all. |
 | Chromium-only | `--why-css` (CSS attribution) uses the debugger protocol. Absent elsewhere, and stated as a limitation rather than skipped silently. |
 
-Interactive use needs no install at all: every file in `skill/website-qa/scripts/` is a
+Interactive use needs no install at all: every file in `skills/website-qa/scripts/` is a
 self-contained IIFE you can paste into a browser console. It will tell you which
 evidence it had (`roleSource`) so a weaker reading is never mistaken for a full one.
 
@@ -57,7 +57,15 @@ npm run sync:skills
 ```
 
 `npm run check:skills` reports installation drift without changing anything. To install
-one skill elsewhere, copy its complete folder from `skill/`.
+one skill elsewhere, copy its complete folder from `skills/`.
+
+### As a plugin
+
+The repository carries `.claude-plugin/plugin.json` and a `commands/` entry per skill, so a
+Claude Code plugin install from this git URL picks up all three skills plus `/website-qa`,
+`/figma-parity` and `/engine-behaviour`. The skills live in `skills/<name>/` — the layout a
+plugin expects — so there is **one** copy of each: the plugin and `sync:skills` point at the
+same folders and cannot drift. No marketplace entry is published yet.
 
 ## How `website-qa` works
 

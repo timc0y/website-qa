@@ -7,24 +7,25 @@
   "type": "module",
   "scripts": {
     "check:manifest": "node scripts/check-manifest.mjs",
-    "qa": "node skill/website-qa/runner/qa_runner.mjs",
+    "qa": "node skills/website-qa/runner/qa_runner.mjs",
     "check:disclosure": "node scripts/check-disclosure.mjs",
     "check:contracts": "node scripts/check-contracts.mjs",
     "check:skill-docs": "node scripts/check-skill-docs.mjs",
     "check:skills": "node scripts/sync-skills.mjs --check",
     "sync:skills": "node scripts/sync-skills.mjs",
-    "test:regress": "node skill/website-qa/tests/check-regress.mjs",
-    "test:crosspage": "node skill/website-qa/tests/check-crosspage.mjs",
-    "test:cascade": "node skill/website-qa/tests/check-cascade.mjs",
-    "test:detectors": "node skill/website-qa/tests/check-fixtures.mjs",
-    "test:extensions": "node skill/website-qa/tests/check-extension-contracts.mjs",
-    "test:figma-parity": "node skill/figma-parity/tests/check-scripts.mjs",
-    "test": "npm run check:manifest && npm run check:disclosure && npm run check:skill-docs && npm run check:contracts && npm run test:regress && npm run test:crosspage && npm run test:cascade && npm run test:detectors && npm run test:extensions && npm run test:figma-parity"
+    "test:regress": "node skills/website-qa/tests/check-regress.mjs",
+    "test:crosspage": "node skills/website-qa/tests/check-crosspage.mjs",
+    "test:cascade": "node skills/website-qa/tests/check-cascade.mjs",
+    "test:detectors": "node skills/website-qa/tests/check-fixtures.mjs",
+    "test:endtoend": "node skills/website-qa/tests/check-endtoend.mjs",
+    "test:extensions": "node skills/website-qa/tests/check-extension-contracts.mjs",
+    "test:figma-parity": "node skills/figma-parity/tests/check-scripts.mjs",
+    "test": "npm run check:manifest && npm run check:disclosure && npm run check:skill-docs && npm run check:contracts && npm run test:regress && npm run test:crosspage && npm run test:cascade && npm run test:detectors && npm run test:endtoend && npm run test:extensions && npm run test:figma-parity"
   },
   "dependencies": {
     "playwright": "1.62.1"
   },
   "bin": {
-    "website-qa": "skill/website-qa/runner/qa_runner.mjs"
+    "website-qa": "skills/website-qa/runner/qa_runner.mjs"
   }
 }

@@ -3,9 +3,9 @@
 ## Reality
 
 - Users and external installs: Unknown.
-- External surface: Disclosure-controlled repository containing independently installable `website-qa`, `figma-parity`, and `engine-behaviour` skills with Playwright utilities. Public-facing intent is proven; npm publication is not.
+- External surface: Disclosure-controlled repository containing independently installable `website-qa`, `figma-parity`, and `engine-behaviour` skills with Playwright utilities, a `website-qa` bin, and a `.claude-plugin/plugin.json` making the repository installable as a plugin. Public-facing intent is proven; npm publication is not, and no marketplace entry exists yet.
 - Persistent data: None; captures and evidence belong to the inspected project.
-- Compatibility: Preserve independent installation, manifests, provider provenance, current-schema validation, and disclosure safety.
+- Compatibility: Preserve independent installation, manifests, provider provenance, current-schema validation, disclosure safety, and the frozen regression metric ids that stored runs depend on.
 
 ## Preserve
 
@@ -21,7 +21,7 @@
 
 ## Proof
 
-- `npm test`, including disclosure, manifest, detector, regression, and parity suites.
+- `npm test`, including disclosure, manifest, detector, regression, end-to-end, registry-contract, and parity suites.
 
 ## Reconsider when
 

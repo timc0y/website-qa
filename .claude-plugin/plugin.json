@@ -1,0 +1,11 @@
+{
+  "name": "website-quality",
+  "version": "1.0.0",
+  "description": "Evidence-led website QA: find layout, responsive, accessibility, metadata and runtime defects on any rendered site, compare a build with specific Figma nodes, and explain engine-specific symptoms.",
+  "author": {
+    "name": "Tim Coy",
+    "url": "https://github.com/timc0y"
+  },
+  "repository": "https://github.com/timc0y/website-qa",
+  "license": "MIT"
+}

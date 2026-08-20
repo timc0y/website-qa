@@ -26,6 +26,37 @@
  * findings. Add ids; never rename one.
  */
 
+/* Which audits exist, and when each runs.
+ *
+ * The other half of the same fact: the tables below declare what an audit PRODUCES, and
+ * this declares that it exists. They were in two files — a run's script list in the runner,
+ * its output shape here — which is one fact with two owners and the reason a phase could be
+ * added without its findings ever reaching a report.
+ *
+ * `phase` is a contract with the runner, not a hint:
+ *   roles         — publishes window.__WQA_ROLES; must run before anything consults it
+ *   measurement   — part of a box-model measurement, merged into the breakpoint result
+ *   perBreakpoint — run at every width, kept under its own key
+ *   once          — width-independent, run once at a mid-desktop width
+ *   onDemand      — only when a flag asks for it
+ */
+export const AUDITS = [
+  { key: 'roles', file: 'audit_roles.js', phase: 'roles' },
+  { key: 'layout', file: 'audit_layout.js', phase: 'measurement' },
+  { key: 'slack', file: 'audit_slack.js', phase: 'measurement' },
+  { key: 'polish', file: 'audit_polish.js', phase: 'perBreakpoint' },
+  { key: 'content', file: 'audit_content.js', phase: 'once' },
+  { key: 'a11y_seo', file: 'audit_a11y_seo.js', phase: 'once' },
+  { key: 'consistency', file: 'audit_consistency.js', phase: 'once' },
+  { key: 'transitions', file: 'audit_transitions.js', phase: 'once' },
+  // "computed value has no explanation in the cascade" — the class that costs a long
+  // investigation and ends in setting the property explicitly anyway
+  { key: 'cascade', file: 'audit_cascade.js', phase: 'once' },
+  { key: 'design', file: 'audit_design_spec.js', phase: 'onDemand' }
+];
+
+export const auditsInPhase = phase => AUDITS.filter(a => a.phase === phase);
+
 const len = a => (Array.isArray(a) ? a.length : 0);
 
 /* Findings produced per breakpoint by `audit_layout.js`.

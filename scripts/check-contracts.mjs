@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-const root = path.resolve(import.meta.dirname, '..', 'skill');
+const root = path.resolve(import.meta.dirname, '..', 'skills');
 for (const file of ['design-spec.md', 'design-spec.schema.json']) {
   const websiteQa = readFileSync(path.join(root, 'website-qa', 'references', file), 'utf8');
   const figmaParity = readFileSync(path.join(root, 'figma-parity', 'references', file), 'utf8');
@@ -12,7 +12,7 @@ console.log('Shared design-spec contracts match exactly.');
 
 const auditSchema = JSON.parse(readFileSync(path.join(root, 'website-qa', 'references', 'audit-manifest.schema.json'), 'utf8'));
 assert.equal(auditSchema.properties.schemaVersion.const, 2, 'website-qa audit manifest schema version must match the runner');
-const runner = readFileSync(path.resolve(import.meta.dirname, '..', 'skill', 'website-qa', 'runner', 'qa_runner.mjs'), 'utf8');
+const runner = readFileSync(path.resolve(import.meta.dirname, '..', 'skills', 'website-qa', 'runner', 'qa_runner.mjs'), 'utf8');
 assert.match(runner, /schemaVersion:\s*2/);
 assert.match(runner, /physicalDevice:\s*false/);
 assert.match(runner, /devices:\s*\[\]/);

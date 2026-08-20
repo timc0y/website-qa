@@ -45,7 +45,8 @@ import { findBaseline, loadBaseline, diffRuns, renderRegressionSection } from '.
 import { crossPageAudit, renderCrossPageSection } from './lib/crosspage.mjs';
 import { summarizeConsole } from './lib/console.mjs';
 import { annotateFindings } from './lib/finding-ids.mjs';
-import { SUMMARY_BITS, LAYOUT_FINDINGS } from './lib/registry.mjs';
+import { SUMMARY_BITS, LAYOUT_FINDINGS, AUDITS, auditsInPhase } from './lib/registry.mjs';
+import { diffEngines, diffSweeps } from './lib/engines.mjs';
 import { perturbationSweep } from './lib/perturb.mjs';
 import { attributeFindings } from './lib/attribution.mjs';
 import { rankByImpact } from './lib/impact.mjs';
@@ -120,23 +121,18 @@ if (vocabFile && !existsSync(vocabFile)) throw new Error(`vocabulary file does n
 const vocab = loadVocab(vocabFile ? JSON.parse(readFileSync(vocabFile, 'utf8')) : null);
 const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
+/* Which audits exist is declared in the registry; this only reads them off disk. Polish
+ * runs at EVERY breakpoint, not once: half of what it looks for — gutters, near-miss wraps,
+ * widows — only exists at a particular width, and the notes people actually file about them
+ * ("can this fit on one line?") are overwhelmingly mobile. Running it once at desktop was
+ * why the first version of this runner found none. */
 const S = f => readFileSync(join(SCRIPTS, f), 'utf8');
-const LAYOUT = S('audit_layout.js');
-// Polish runs at EVERY breakpoint, not once. Half of what it looks for — gutters,
-// near-miss wraps, widows — only exists at a particular width, and the notes people
-// actually file about them ("can this fit on one line?") are overwhelmingly mobile.
-// Running it once at desktop was why the first version of this runner found none.
-/* Roles run FIRST at every width: every other check consults `window.__WQA_ROLES` to ask
- * what a thing is, and falls back to weaker class-name matching when it is absent. Slack
- * runs alongside layout and owns every "does it fit" question. */
-const ROLES_SRC = S('audit_roles.js');
-const SLACK_SRC = S('audit_slack.js');
-const PER_BREAKPOINT = { layout: LAYOUT, polish: S('audit_polish.js') };
-const ONCE = { content: S('audit_content.js'), a11y_seo: S('audit_a11y_seo.js'),
-  consistency: S('audit_consistency.js'), transitions: S('audit_transitions.js'),
-  // "computed value has no explanation in the cascade" — the class that costs a long
-  // investigation and ends in setting the property explicitly anyway
-  cascade: S('audit_cascade.js') };
+const SRC = Object.fromEntries(AUDITS.map(a => [a.key, S(a.file)]));
+const inPhase = phase => auditsInPhase(phase).map(a => [a.key, SRC[a.key]]);
+const ROLES_SRC = SRC.roles;
+const MEASUREMENT = inPhase('measurement');
+const PER_BREAKPOINT = Object.fromEntries(inPhase('perBreakpoint'));
+const ONCE = Object.fromEntries(inPhase('once'));
 const run = src => `(0, eval)(${JSON.stringify(src)})`;   // indirect eval → returns trailing IIFE value
 
 /* Put the page in the state a reader is actually looking at before measuring it: webfonts
@@ -250,9 +246,11 @@ async function measureLayout(page, { stable = false } = {}) {
   const once = async () => {
     let roles = null;
     try { roles = await page.evaluate(run(ROLES_SRC)); } catch (e) { roles = { error: String(e.message || e).slice(0, 120) }; }
-    const out = await page.evaluate(run(PER_BREAKPOINT.layout));
-    try { Object.assign(out, await page.evaluate(run(SLACK_SRC))); }
-    catch (e) { out.slackError = String(e.message || e).slice(0, 120); }
+    const out = {};
+    for (const [key, src] of MEASUREMENT) {
+      try { Object.assign(out, await page.evaluate(run(src))); }
+      catch (e) { out[`${key}Error`] = String(e.message || e).slice(0, 120); }
+    }
     out.roles = roles;
     return out;
   };
@@ -273,7 +271,7 @@ async function measureLayout(page, { stable = false } = {}) {
   return first;
 }
 
-const DESIGN_SPEC_SRC = S('audit_design_spec.js');
+const DESIGN_SPEC_SRC = SRC.design;
 
 /* Keep a classic scrollbar out of the layout on EVERY page load, before any audit measures
  * anything. Where a browser draws one, `innerWidth` counts it but the body does not fill
@@ -619,59 +617,6 @@ for (const eng of engines.slice(1)) {
     await p2.close();
   }
   await b2.close();
-}
-
-/* Which defect counts differ between engines, per breakpoint. Counts, not contents:
-   selectors and text are identical across engines, so a changed count is the signal
-   and the detail lives in each engine's own findings block. */
-function diffEngines(a, b, widths, nameA, nameB) {
-  const metrics = {
-    overflow: L => L.horizontalOverflow?.offenders?.length || 0,
-    scrollsSideways: L => (L.horizontalOverflow?.pageScrollsSideways ? 1 : 0),
-    collapsed: L => L.collapsedElements?.length || 0,
-    wrapping: L => L.unintendedWrapping?.length || 0,
-    clippedText: L => L.clippedText?.length || 0,
-    gutterOutliers: L => L.polish?.containerGutters?.outliers?.length || 0,
-    wrappedGroups: L => L.polish?.wrappedGroups?.length || 0,
-    missingGaps: L => L.polish?.missingGaps?.length || 0,
-    // the headline cross-browser check: an SVG that sizes correctly in one engine
-    // and blows up in another is the single most common Safari-only layout bug
-    oversizedSvgs: L => L.polish?.svg?.oversized?.length || 0,
-    widestSvgPx: L => Math.round(Math.max(0, ...(L.polish?.svg?.oversized || []).map(s =>
-      parseInt(String(s.rendered).split('x')[0], 10) || 0)))
-  };
-  const out = [];
-  for (const w of widths) {
-    const A = a[w], B = b[w]; if (!A || !B || A.error || B.error) continue;
-    for (const [name, f] of Object.entries(metrics)) {
-      const va = f(A), vb = f(B);
-      if (va !== vb) out.push({ breakpoint: w, metric: name, [nameA]: va, [nameB]: vb,
-        hint: `${name} differs between ${nameA} and ${nameB} at ${w}px — likely a browser-specific rendering bug` });
-    }
-  }
-  return out;
-}
-
-/* Sweep ranges, engine against engine. A range in one engine only is the finding — that is
- * the "it looks fine on my machine, my client sent me a photo of it broken" case. Ranges are
- * compared by identity (kind + element), not by their endpoints, because a band shifting by
- * one step is the same defect and reporting it as two would bury the real difference. */
-function diffSweeps(a, b, nameA, nameB) {
-  const key = f => `${f.kind}|${f.what}`;
-  const A = new Map((a?.findings || []).map(f => [key(f), f]));
-  const B = new Map((b?.findings || []).map(f => [key(f), f]));
-  const out = [];
-  for (const [k, f] of A) if (!B.has(k))
-    out.push({ what: f.what, kind: f.kind, range: f.range, onlyIn: nameA,
-      hint: `present in ${nameA} (${f.range}) and absent in ${nameB} — engine-specific` });
-  for (const [k, f] of B) if (!A.has(k))
-    out.push({ what: f.what, kind: f.kind, range: f.range, onlyIn: nameB,
-      hint: `present in ${nameB} (${f.range}) and absent in ${nameA} — engine-specific, and the ` +
-        `kind of defect a client reports from a device the primary engine never shows` });
-  for (const [k, f] of A) { const g = B.get(k); if (g && g.range !== f.range)
-    out.push({ what: f.what, kind: f.kind, [nameA]: f.range, [nameB]: g.range,
-      hint: 'same defect, different width band per engine' }); }
-  return out;
 }
 
 /* Headings that render at the same size on the widest and narrowest viewport are

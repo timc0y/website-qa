@@ -23,7 +23,7 @@ const denseProsePhrases = [
 ];
 
 for (const name of skills) {
-  const directory = path.join(root, 'skill', name);
+  const directory = path.join(root, 'skills', name);
   const skillFile = path.join(directory, 'SKILL.md');
   const source = readFileSync(skillFile, 'utf8');
   const frontmatter = source.match(/^---\r?\n([\s\S]*?)\r?\n---/);
