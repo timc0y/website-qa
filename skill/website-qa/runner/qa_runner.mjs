@@ -311,6 +311,29 @@ const seedVocab = async page => { await page.addInitScript(v => { window.__QA_VO
   await seedScrollbar(page); };
 
 const browser = await ENGINES[engines[0]].launch(channel ? { channel } : {});
+/* What this run cost, measured rather than estimated.
+ *
+ * Every phase here loads pages, drives a browser and takes wall-clock time, and an operator
+ * choosing between "quick look" and "everything on" deserves the real numbers rather than a
+ * guess in a README. It also makes an expensive phase visible: a sweep at --sweep=8 is
+ * legitimate and slow, and a report that hides which flag cost eight minutes invites the
+ * flag being dropped for the wrong reason.
+ *
+ * `loads` counts navigations, because that is the cost the reviewed SITE pays — its server,
+ * its analytics, its rate limits — and the one an operator should think about before
+ * pointing this at production. */
+const cost = { phases: {}, loads: 0, startedAt: Date.now() };
+const trackLoad = () => { cost.loads++; };
+async function phase(name, fn) {
+  const t0 = Date.now();
+  const loads0 = cost.loads;
+  try { return await fn(); }
+  finally {
+    const rec = cost.phases[name] = cost.phases[name] || { ms: 0, loads: 0, runs: 0 };
+    rec.ms += Date.now() - t0; rec.loads += cost.loads - loads0; rec.runs++;
+  }
+}
+
 const report = { generatedAt: ts, vocabFile: vocabFile || '(defaults)', engines, urls: [] };
 
 for (const url of urls) {
@@ -345,6 +368,7 @@ for (const url of urls) {
   const entry = { url, dir, byBreakpoint: {}, once: {}, interactions: {} };
 
   // ── per-breakpoint static audit ────────────────────────────────────────────
+  await phase('breakpoint pass', async () => {
   for (const w of widths) {
     await page.setViewportSize({ width: w, height: 900 });
     /* networkidle NEVER ARRIVES on a site with continuous background polling —
@@ -352,7 +376,7 @@ for (const url of urls) {
      * as a page error made a perfectly healthy page read as "site is down", which
      * is how a sweep produced a false broken-carousel finding. Only report it when
      * the document genuinely failed to load. */
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(async e => {
+    trackLoad(); await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(async e => {
       const loaded = await page.evaluate(() => document.readyState === 'complete' || document.readyState === 'interactive').catch(() => false);
       if (!loaded) pageErrors.push('goto: ' + e.message);
       else entry.once.networkNeverIdle = true;
@@ -385,25 +409,26 @@ for (const url of urls) {
     }
     await page.screenshot({ path: join(dir, `fullpage-${w}.png`), fullPage: true }).catch(() => {});
   }
+  });
 
   // ── width sweep: the box-model checks at every step, reported as ranges ────
-  if (sweepStep > 0) entry.once.widthSweep = await runWidthSweep(page);
+  if (sweepStep > 0) entry.once.widthSweep = await phase('width sweep', () => runWidthSweep(page));
 
   // ── perturbation: what the next edit breaks ────────────────────────────────
   if (doPerturb) {
     try {
-      entry.once.perturbation = await perturbationSweep(page, {
+      entry.once.perturbation = await phase('perturbation', () => perturbationSweep(page, {
         widths: perturbWidths.filter(w => w > 0),
         measure: p => measureLayout(p),
-        reload: async () => { await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {}); },
+        reload: async () => { trackLoad(); await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {}); },
         settle: () => settlePage(page, 250),
-        only: perturbOnly });
+        only: perturbOnly }));
     } catch (e) { entry.once.perturbation = { error: String(e.message || e).slice(0, 160) }; }
   }
 
   // ── breakpoint-independent audits, once at a mid-desktop width ─────────────
   await page.setViewportSize({ width: 1512, height: 982 });
-  await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+  trackLoad(); await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
   await page.waitForTimeout(waitMs);
   for (const [name, src] of Object.entries(ONCE)) {
     try { entry.once[name] = await page.evaluate(run(src)); }
@@ -411,7 +436,7 @@ for (const url of urls) {
   }
 
   // ── interaction phase (desktop) ────────────────────────────────────────────
-  if (doInteract) {
+  if (doInteract) await phase('interaction', async () => {
     const shots = join(dir, 'states'); mkdirSync(shots, { recursive: true });
     const step = async (name, fn) => { try { entry.interactions[name] = await fn(); }
       catch (e) { entry.interactions[name] = { error: String(e.message || e).slice(0, 120) }; } };
@@ -422,14 +447,14 @@ for (const url of urls) {
     if (!flag('no-cta-clicks')) await step('ctaClicks', () => ctaClickAudit(page, { url, vocab }));
     await step('keyboard', () => keyboardAudit(page));
     // reload so the scroll pass starts from a clean, un-poked page
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+    trackLoad(); await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
     await page.waitForTimeout(waitMs);
     if (doScroll) await step('scroll', () => scrollAudit(page, { vocab }));
     await page.screenshot({ path: join(dir, 'after-scroll-1512.png'), fullPage: false }).catch(() => {});
 
     // ── interaction phase (mobile) — different code path, different bugs ─────
     await page.setViewportSize({ width: 393, height: 852 });
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+    trackLoad(); await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
     await page.waitForTimeout(waitMs);
     entry.interactions.mobile = {};
     const mstep = async (name, fn) => { try { entry.interactions.mobile[name] = await fn(); }
@@ -440,17 +465,17 @@ for (const url of urls) {
     // screenshot. Reload before scrolling so a mobile menu's overflow:hidden lock
     // cannot turn a full-page scroll audit into a zero-step false failure.
     if (doScroll) {
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+      trackLoad(); await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
       await page.waitForTimeout(waitMs);
       await mstep('scroll', () => scrollAudit(page, { vocab }));
     }
-  }
+  });
 
   // ── design spec comparison, at the spec's own frame width ──────────────────
   if (designSpec) {
     const fw = designSpec.frameWidth || 1512;
     await page.setViewportSize({ width: fw, height: 982 });
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+    trackLoad(); await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
     await page.waitForTimeout(waitMs);
     try { entry.design = await page.evaluate(run(DESIGN_SPEC_SRC)); }
     catch (e) { entry.design = { error: String(e.message || e).slice(0, 120) }; }
@@ -463,7 +488,7 @@ for (const url of urls) {
     for (const w of visionWidths) {
       const vdir = join(dir, 'vision', String(w));
       await page.setViewportSize({ width: w, height: w <= 480 ? 852 : 982 });
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+      trackLoad(); await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
       await page.waitForTimeout(waitMs);
       try {
         const v = await visionCapture(page, { dir: vdir, width: w, maxTiles: visionMaxTiles });
@@ -520,9 +545,9 @@ for (const url of urls) {
     const widest = entry.byBreakpoint[Math.max(...widths)] || {};
     const targets = LAYOUT_FINDINGS.flatMap(({ array }) => widest[array] || []);
     await page.setViewportSize({ width: Math.max(...widths), height: 900 });
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+    trackLoad(); await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
     await settlePage(page, 250);
-    try { entry.cssAttribution = await attributeFindings(page, targets); }
+    try { entry.cssAttribution = await phase('css attribution', () => attributeFindings(page, targets)); }
     catch (e) { entry.cssAttribution = { available: false, why: String(e.message || e).slice(0, 120) }; }
   }
   entry.impact = rankByImpact(entry);
@@ -548,7 +573,7 @@ for (const eng of engines.slice(1)) {
     const byBp = {};
     for (const w of widths) {
       await p2.setViewportSize({ width: w, height: 900 });
-      await p2.goto(entry.url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+      trackLoad(); await p2.goto(entry.url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
       await p2.waitForTimeout(waitMs);
       /* Scroll the page before measuring the second engine. WebKit's lazy-load threshold is
        * one viewport (relative); Chromium's is a fixed ~1250px — so a plain load leaves more
@@ -568,7 +593,7 @@ for (const eng of engines.slice(1)) {
     if (doVision) {
       for (const w of visionWidths) {
         await p2.setViewportSize({ width: w, height: w <= 480 ? 852 : 982 });
-        await p2.goto(entry.url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+        trackLoad(); await p2.goto(entry.url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
         await p2.waitForTimeout(waitMs);
         try { eVision[w] = await visionCapture(p2, { dir: join(entry.dir, 'vision', `${w}-${eng}`), width: w, prefix: `${eng}-`, maxTiles: visionMaxTiles }); }
         catch (e) { eVision[w] = { error: String(e.message || e).slice(0, 160) }; }
@@ -580,7 +605,7 @@ for (const eng of engines.slice(1)) {
      * engines agree on has already been reported once. */
     let eSweep = null;
     if (sweepStep > 0) {
-      await p2.goto(entry.url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
+      trackLoad(); await p2.goto(entry.url, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
       await p2.waitForTimeout(waitMs);
       try { eSweep = await runWidthSweep(p2); } catch (e) { eSweep = { error: String(e.message || e).slice(0, 160) }; }
     }
@@ -703,6 +728,8 @@ if (doBaseline) {
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────
+cost.totalMs = Date.now() - cost.startedAt;
+report.cost = cost;
 let high = 0; const lines = [`# QA sweep — ${ts}`, ''];
 /* The regression section goes FIRST, above the legend and every absolute finding. A
  * 4px padding delta has always been wrong and can wait; a thumbnail that rendered on
@@ -1114,6 +1141,19 @@ for (const e of report.urls) {
   }
   lines.push('');
 }
+/* Cost last, because it is the only section nobody needs in a hurry — and the one an
+ * operator wants before the NEXT run. Page loads are listed separately from time: they are
+ * what the reviewed site pays for being reviewed. */
+const s2 = v => (v / 1000).toFixed(1) + 's';
+lines.push('', '## What this run cost',
+  `- ${s2(cost.totalMs)} total · ${cost.loads} page load(s) · ${report.urls.length} URL(s) · ` +
+  `${widths.length} breakpoint(s) · engines: ${engines.join(', ')}`);
+for (const [name, rec] of Object.entries(cost.phases).sort((a, b) => b[1].ms - a[1].ms))
+  lines.push(`- ${name}: ${s2(rec.ms)}${rec.loads ? `, ${rec.loads} load(s)` : ''}` +
+    `${rec.runs > 1 ? ` across ${rec.runs} run(s)` : ''}`);
+lines.push('- nothing on the reviewed site was changed: no form was submitted, no content was ' +
+  'edited, and every page-side mutation (perturbation) was undone by reloading.');
+
 writeFileSync(join(dir, 'summary.md'), lines.join('\n'));
 
 /* Provider-neutral handoff for review orchestrators. This is intentionally not
@@ -1139,6 +1179,9 @@ const auditManifest = {
       consoleAndNetwork: true,
       crossBrowser: engines.length > 1,
       physicalDevice: false,
+      // capability, not a phase: it needs the debugger protocol and only Chromium has it
+      cssDeclarationAttribution: doWhyCss && engines[0] === 'chromium',
+      inputPerturbation: doPerturb,
       regression: doBaseline
     }
   },
@@ -1151,8 +1194,14 @@ const auditManifest = {
       scroll: doScroll,
       links: doLinks,
       vision: doVision,
-      baseline: doBaseline
+      baseline: doBaseline,
+      widthSweep: sweepStep > 0 ? { step: sweepStep } : false,
+      perturbation: doPerturb ? { widths: perturbWidths, only: perturbOnly || 'all' } : false,
+      cssAttribution: doWhyCss
     },
+    /* What the run cost, in the manifest as well as the summary: a consumer comparing two
+     * runs needs to know one of them was a quick pass. */
+    cost: { totalMs: cost.totalMs, pageLoads: cost.loads, phases: cost.phases },
     visionBreakpoints: doVision ? visionWidths : [],
     visionMaxTiles: doVision ? visionMaxTiles : 0
   },

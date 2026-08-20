@@ -40,8 +40,11 @@ evidence it had (`roleSource`) so a weaker reading is never mistaken for a full 
 ```sh
 npm ci
 npx playwright install chromium webkit
-node skill/website-qa/runner/qa_runner.mjs --url=https://example.com --out=qa-output
+npm run qa -- --url=https://example.com --out=qa-output
 ```
+
+`npm link` puts it on your PATH as `website-qa`. The runner is a plain Node CLI with one
+pinned dependency; it is not published to npm, so install it from this repository.
 
 Read `qa-output/<timestamp>/summary.md` top-down: regressions first, then findings
 ordered by the content a reader loses. Full recipes are in the
@@ -88,6 +91,26 @@ Adding a check is one file plus one row in `runner/lib/registry.mjs`, which decl
 what each audit produces. The runner, the regression diff, the finding index and the
 summary all read that declaration, and `npm test` asserts every declared finding
 reaches all four.
+
+## Costs and blast radius
+
+Every run measures itself. `summary.md` ends with **What this run cost** — wall clock per
+phase, and **page loads separately**, because loads are what the reviewed site pays for
+being reviewed: its server, its analytics, its rate limits and its bot detection all see
+them. `audit-manifest.json` carries the same figures for a consumer comparing two runs.
+
+The blast radius is bounded by rule, not by luck. A run never submits a form, logs in or
+out, pays, downloads, deletes, changes content, publishes, or follows an unclear action.
+Only ephemeral browser state is permitted: controls, viewport, preferences, isolated
+consent, client-side validation. Form fields *are* filled with deliberately invalid values
+to test blur validation and then cleared — submit is never clicked and Enter is never
+pressed. Perturbations mutate the current render and are undone by reloading rather than by
+attempting to revert, so one missed revert cannot poison a later measurement.
+
+Two phases reach further than the rest and are worth knowing about before pointing this at
+production: **interaction** navigates when it clicks a CTA, and **links** requests every
+destination it finds. Per-phase costs and radii are tabulated in the
+[operator's guide](docs/using-website-qa.md#costs-and-blast-radius).
 
 ## Independence and integration
 

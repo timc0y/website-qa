@@ -4,8 +4,8 @@
  * Every finding in this skill answers *what* is wrong. This answers the question
  * that immediately follows, and the one you actually need before you can fix
  * anything in a visual builder: which class, which declaration, inside which media
- * query. Without it you're left hunting through the Designer for the combo class
- * that set a 28px font size; with it the fix is mechanical.
+ * query. Without it you're left hunting through a class list for whichever combo set a
+ * 28px font size; with it the fix is mechanical.
  *
  * Walks the real CSSOM, so it sees Webflow's generated stylesheet, any embedded
  * custom code, and inline styles — in cascade order, with the winning declaration

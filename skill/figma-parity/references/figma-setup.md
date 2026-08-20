@@ -66,9 +66,8 @@ sides makes a genuine difference easy to see.
 
 If something intentionally differs from a naive reading of the file, for
 example a section that deliberately reuses another component, or a breakpoint
-that intentionally drops an element, leave a Figma comment. A reviewer can read
-comments through the figma-context skill, and will not raise the deviation as a
-finding.
+that intentionally drops an element, leave a Figma comment. A reviewer who can read
+the file's comments will see it and not raise the deviation as a finding.
 
 ## Enable the right access
 

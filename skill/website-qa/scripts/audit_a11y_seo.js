@@ -199,8 +199,8 @@
    * A screen reader's heading list and a browser's outline view both read tag names, not
    * pixels. A short, large, bold line of text sitting where a section title belongs but
    * marked up as a <p>/<div>/<span> is invisible to both — it looks exactly like a heading
-   * and functions like body text. The inverse also happens: an <h2> a Designer restyled
-   * down to body size still announces "heading, level 2" with nothing to show for it
+   * and functions like body text. The inverse also happens: an <h2> restyled down to
+   * body size still announces "heading, level 2" with nothing to show for it
    * visually. Both are SUSPECTED findings — confirm by eye before reporting as fact, since a
    * short bold pull-quote or a label chip can trip the same size/weight heuristic. */
   const bodyFs = parseFloat(getComputedStyle(document.body).fontSize) || 16;

@@ -369,7 +369,7 @@ from every other section's left edge is the trustworthy signal — that one surv
 
 **Related shape, different cause.** A cross-page sweep reported "container gutters at 1920px:
 dominant 266px, also 290px, 328px, 346px" on Home, Key-man and About — read as the shared
-container primitive being inconsistent. Reading the actual computed styles in the Designer showed
+container primitive being inconsistent. Reading the actual computed styles showed
 every `.container` instance on the page carrying the exact same `padding: 0 64.47px` — one class,
 one value, applied uniformly. The variance came from **inner content wrappers layered on top of
 the container** (e.g. `.about-intro_head` adds its own `margin: 0 106px` to center a narrower text
@@ -420,14 +420,13 @@ on the element without first hovering (or otherwise opening) its trigger is clic
 target that is either not in the interactable tree yet or still sits under a closed panel —
 the same failure shape as a closed accordion counted as collapsed (see "Intentional read as
 broken" above), but for click behaviour rather than layout. The link itself can be wired
-correctly — verified directly in the Designer — and still read as dead through this path.
+correctly — verified directly in the source — and still read as dead through this path.
 
 **Fix.** Before clicking any control found inside a dropdown/mega-menu/nav-flyout subtree,
 open its trigger (hover, or whatever the real interaction is) and wait for the open state
 first, exactly as `interact.mjs` already does for accordions and tabs. Until that's in
 place, treat a dead-click finding inside nav dropdown content as SUSPECTED, not MEASURED —
-confirm the element's own link/settings (e.g. via the Designer's component props) before
-reporting it as broken.
+confirm the element's own href or link settings at the source before reporting it as broken.
 
 ## Vector SVG assets flagged as "pixelated" / "upscaled"
 

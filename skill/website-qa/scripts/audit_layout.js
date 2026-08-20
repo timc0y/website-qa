@@ -663,7 +663,7 @@
    * shadow root, so `innerText` on the stat is the empty string and a light-DOM text walk
    * finds nothing at all. Every text-based check in this file is blind to text like that.
    * Descend into open shadow roots and report against the light-DOM host, which is the
-   * element a person can actually find in the Designer. Closed roots stay invisible —
+   * element a person can actually find in their editor. Closed roots stay invisible —
    * nothing can be measured through them, and that is a stated limit, not a clean result. */
   /* The nearest box that actually clips this element, crossing shadow boundaries by way of
    * the host. Returns null when nothing clips it. */

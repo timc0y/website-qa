@@ -22,6 +22,15 @@ console and will return its findings. Paste `audit_roles.js` first — the other
 what it publishes and otherwise fall back to weaker class-name matching, which they
 report as `roleSource`.
 
+The runner has a name, so you do not have to type its path:
+
+```sh
+npm run qa -- --url=https://example.com --out=qa-output    # in this repository
+npm link && website-qa --url=https://example.com           # anywhere on this machine
+```
+
+Every recipe below spells out the full path, which works whether or not you linked it.
+
 ## Recipes
 
 **Look at one page.** Sensible defaults: eight breakpoints, the width sweep at 64px,
@@ -124,6 +133,49 @@ Every finding carries its own evidence class, and they are not interchangeable:
 - `transient` (sweep) — appeared at one width and did not reproduce ±step/3.
 - **Absent is not clean.** `hitTesting`, `roleSource`, `limitations` and the "not checked"
   lines say what the run could not establish. Quote them in the report.
+
+## Costs and blast radius
+
+Every run is measured, and the numbers are written into `summary.md` under
+**What this run cost** and into `audit-manifest.json` under `configuration.cost`. Nothing
+below is an estimate from a README — read your own run.
+
+Page loads are listed separately from time because they are the cost the **reviewed site**
+pays for being reviewed: its server, its analytics, its rate limits and its bot detection
+all see them. Think about that number before pointing this at production.
+
+| Phase | What it costs | Blast radius — what it touches |
+|---|---|---|
+| Breakpoint pass | one page load per width (8 by default), plus a full-page screenshot each | GET requests only. Scrolls the page to settle it, which triggers lazy loading and any scroll-linked analytics. |
+| Width sweep | no extra loads — the same page is resized and re-measured | Resize and read. Restarts scroll-triggered reveals, which is why findings are re-probed rather than trusted. |
+| Interaction | several loads: CTA clicks reload per button by design | The widest radius. Hovers, clicks controls open, tabs through with a keyboard, and **navigates** when a CTA is clicked. Form fields are filled with deliberately invalid values and then cleared — submit is never clicked, Enter is never pressed, nothing is sent. |
+| Links | one request per unique internal link; `--external-links` adds third-party destinations | HEAD/GET only, but third parties see the traffic. |
+| Vision | screenshots at two widths, tiled | Read-only. Largest disk cost: a run with vision is ~35 MB, without ~20 MB. |
+| Perturbation | one load per perturbation per width — five perturbations × two widths is 12 loads | Mutates **this render**: replaces text, injects a stylesheet, hides images. Undone by reloading rather than by trying to revert, so nothing can leak into a later measurement. The site is never changed. |
+| CSS attribution | one load, then debugger-protocol reads | Read-only inspection of the CSSOM. Chromium only. |
+| Regression diff | free — it reads two files on disk | None. |
+
+What it never does, by rule and not by luck: submit a form, log in or out, pay, download,
+delete, change content, publish, or follow an unclear action. Only ephemeral browser state
+is permitted — controls, viewport, preferences, isolated consent, client-side validation —
+and storage is isolated per run.
+
+One measured run, for scale — a real marketing home page, 8 breakpoints, one URL, with
+`--sweep=64 --why-css --perturb --perturb-breakpoints=393 --no-vision --no-links`:
+
+```
+- 333.5s total · 20 page load(s) · 1 URL(s) · 8 breakpoint(s) · engines: chromium
+- interaction: 123.5s, 3 load(s)
+- breakpoint pass: 112.2s, 8 load(s)
+- perturbation: 41.7s, 7 load(s)
+- width sweep: 41.0s
+- css attribution: 0.2s
+```
+
+22 MB on disk without the vision pass, ~35 MB with it. Note what the numbers say and a
+guess would not: **time and loads are not the same cost.** Interaction is the slowest phase
+by far and only loads three pages; the sweep is free in loads because it resizes one page;
+attribution is effectively instant. Your own run prints its figures — use those, not these.
 
 ## Troubleshooting
 

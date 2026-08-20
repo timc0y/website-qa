@@ -32,6 +32,20 @@ const restrictedIdentifiers = [
   'cmVsZXZhbnQtbGlmZS1pbnN1cmFuY2U=',
   'dGVhbS1tZW1iZXJzL3FhLXBsYWNlaG9sZGVy',
   'cmlXVlRKQWpRYU5FNXJPOEJvdzV4ZA==',
+  /* Authoring-tool and sibling-skill names. This repository documents what a RENDERED page
+   * does; naming the private tool a site was built with, or a skill that is not published
+   * here, couples a public review to a workflow nobody else has. Public platform signatures
+   * in served output (`.w-*`, IX2 behaviour) stay allowed — those are observable facts. */
+  'd2ViZmxvdyBkZXNpZ25lcg==',
+  'aW4gdGhlIGRlc2lnbmVy',
+  'dGhlIGRlc2lnbmVyIHNob3dlZA==',
+  'ZmlnbWEtY29udGV4dA==',
+  'd2YtZmlnbWE=',
+  'd2YtYnVpbGQ=',
+  'd2YtZGVsaXZlcnk=',
+  'd2Ytc2NvcGU=',
+  'd2Ytb3Ntbw==',
+  'd2YtY2xp',
 ].map((value) => Buffer.from(value, 'base64').toString('utf8').toLowerCase());
 
 const absolutePathPatterns = [

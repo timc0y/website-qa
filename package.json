@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "check:manifest": "node scripts/check-manifest.mjs",
+    "qa": "node skill/website-qa/runner/qa_runner.mjs",
     "check:disclosure": "node scripts/check-disclosure.mjs",
     "check:contracts": "node scripts/check-contracts.mjs",
     "check:skill-docs": "node scripts/check-skill-docs.mjs",
@@ -22,5 +23,8 @@
   },
   "dependencies": {
     "playwright": "1.62.1"
+  },
+  "bin": {
+    "website-qa": "skill/website-qa/runner/qa_runner.mjs"
   }
 }
