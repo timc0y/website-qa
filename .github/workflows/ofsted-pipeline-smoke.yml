@@ -1,0 +1,43 @@
+name: Ofsted pipeline smoke test
+
+on:
+  pull_request:
+    paths:
+      - "scripts/ofsted_pipeline.part*.b64"
+      - ".github/workflows/ofsted-pipeline-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install extraction dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq poppler-utils
+          python -m pip install --disable-pip-version-check requests beautifulsoup4
+      - name: Rebuild pipeline script
+        run: |
+          cat scripts/ofsted_pipeline.part*.b64 | base64 -d | gzip -d > scripts/ofsted_full_pipeline.py
+          python -m py_compile scripts/ofsted_full_pipeline.py
+      - name: Download authoritative Ofsted CSV
+        run: |
+          curl --fail --location --retry 4 --output official.csv "https://assets.publishing.service.gov.uk/media/6a75d6a9ff25cc81486b24df/Management_information_-_state-funded_schools_-_all_inspections_-_year_to_date_published_by_31_July_2026.csv"
+          test "$(python -c 'import csv; print(sum(1 for _ in csv.DictReader(open("official.csv", encoding="utf-8-sig"))))')" = "2503"
+      - name: Process 10 reports
+        run: |
+          python scripts/ofsted_full_pipeline.py --official-csv official.csv --output-dir ofsted-smoke --limit 10 --workers 2
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: ofsted-pipeline-smoke
+          path: ofsted-smoke
+          if-no-files-found: error
+          retention-days: 3
