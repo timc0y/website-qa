@@ -26,11 +26,21 @@ jobs:
       - name: Rebuild pipeline script
         run: |
           cat scripts/ofsted_pipeline.part*.b64 | base64 -d | gzip -d > scripts/ofsted_full_pipeline.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("scripts/ofsted_full_pipeline.py")
+          text = path.read_text()
+          old = 'with official.open(encoding="utf-8-sig", newline="") as handle:'
+          new = 'with official.open(encoding="cp1252", newline="") as handle:'
+          if old not in text:
+              raise SystemExit("Expected official CSV reader was not found")
+          path.write_text(text.replace(old, new, 1))
+          PY
           python -m py_compile scripts/ofsted_full_pipeline.py
       - name: Download authoritative Ofsted CSV
         run: |
           curl --fail --location --retry 4 --output official.csv "https://assets.publishing.service.gov.uk/media/6a75d6a9ff25cc81486b24df/Management_information_-_state-funded_schools_-_all_inspections_-_year_to_date_published_by_31_July_2026.csv"
-          test "$(python -c 'import csv; print(sum(1 for _ in csv.DictReader(open("official.csv", encoding="utf-8-sig"))))')" = "2503"
+          test "$(python -c 'import csv; print(sum(1 for _ in csv.DictReader(open("official.csv", encoding="cp1252"))))')" = "2503"
       - name: Process 10 reports
         run: |
           python scripts/ofsted_full_pipeline.py --official-csv official.csv --output-dir ofsted-smoke --limit 10 --workers 2
