@@ -1,0 +1,22 @@
+name: Ofsted CSV diagnostic
+
+on:
+  pull_request:
+    paths:
+      - "scripts/ofsted_csv_diagnostic.py"
+      - ".github/workflows/ofsted-csv-diagnostic.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-csv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --disable-pip-version-check requests
+      - run: python scripts/ofsted_csv_diagnostic.py
