@@ -71,6 +71,9 @@ for the evidence behind these rules.
 Read [execution-modes.md](references/execution-modes.md), then choose:
 
 - `local-parity`: preferred local Figma read, isolated capture, measurement, comparison.
+- `hosted-parity`: public URL, default state, and one width through the `figma_parity`
+  MCP tool. Poll `get_run`. Inspect `readFirst`, both capture packets, and the paired
+  images. Call `attest_parity` with the evidence IDs that you judged.
 - `interactive-parity`: signed-in/prepared state; persist images before session ends.
 - `forge-live-evidence`: supplied live images; list missing interaction/measurement/width evidence.
 

@@ -2,6 +2,15 @@
 
 Choose one method and state what it could and could not check.
 
+## Hosted runner: public URLs without local compute
+
+Use the `website_qa` MCP tool for public pages when it is available. It runs the
+same pinned Playwright runner in a Linux container. It stores the evidence in
+R2 and returns a run ID. Poll `get_run`. Follow `readFirst`. Inspect the images.
+The manifest says `local-runner` because the isolated Playwright process drives
+the page. The `job.json` file identifies the hosted run. Use another mode for
+local pages, authenticated pages, or options that the hosted tool does not supply.
+
 ## Local runner — full sweep
 
 Use `runner/qa_runner.mjs` whenever a local browser can reach the target. This is the

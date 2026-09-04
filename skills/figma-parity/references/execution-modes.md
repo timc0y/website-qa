@@ -47,6 +47,14 @@ history are optional. Declare each one separately.
 This method is done when every requested comparison is covered or named as
 missing and the summary file passes validation.
 
+## `hosted-parity`
+
+Use `figma_parity` for a public URL's default state at one mapped width. The
+hosted container runs the same pinned scripts. It uses Chromium for the live
+capture. Poll `get_run`. Inspect every path in `readFirst`. Compare both capture
+packets for stability. Inspect the paired images and measurements. Then, call
+`attest_parity`. Use `interactive-parity` for authentication or non-default states.
+
 ## `interactive-parity`
 
 Use this method when the browser already carries authentication, local storage,

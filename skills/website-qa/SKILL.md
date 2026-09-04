@@ -88,6 +88,11 @@ remote capture, [execution-modes.md](references/execution-modes.md).
 Prefer the isolated local runner; use an existing browser only for prepared or
 signed-in states. Remote captures narrow coverage and must list omissions.
 
+For public URLs, use the hosted `website_qa` MCP tool when it is available. Poll
+`get_run`. Read every path in `readFirst`. Inspect the saved images before you
+report the result. Use the local runner for local targets and authenticated
+targets. Also, use it for options that the hosted tool does not supply.
+
 ```bash
 npm install
 npx playwright install chromium webkit
