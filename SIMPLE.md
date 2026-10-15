@@ -23,6 +23,10 @@
 
 - `npm test`, including disclosure, manifest, detector, regression, end-to-end, registry-contract, and parity suites.
 
+## Cloudflare framework fit — 15 October 2026 (source review)
+
+This is an independently installable skill/CLI/evidence-contract bundle, not a SaaS UI. Avoid a full-stack Cloudflare migration. Keep provider-neutral artifact boundaries, independent skill installs, security disclosure and frozen regression metrics. A new package/build tool must remove maintenance without breaking the published manifest, exact schema or end-to-end detector suites.
+
 ## Reconsider when
 
 - Both skills need the same evidence contract and can share it without coupling their independent installation.
